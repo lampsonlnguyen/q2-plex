@@ -1,0 +1,22 @@
+name: Test and build Q2 Plex
+on:
+  push:
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Format check
+        run: test -z "$(gofmt -l $(find cmd internal -name '*.go'))"
+      - name: Unit tests
+        run: go test ./...
+      - name: Package MIPS32 app
+        run: ./contrib/shanlingq2/build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: q2-plex-beta
+          path: dist/q2-plex-*.zip

@@ -1,1 +1,53 @@
-# q2-timberman
+# q2-plex
+
+**Experimental v0.1.0** — music-only Plex client for the Shanling Q2 with Q2 Pod firmware.
+
+This is an initial implementation, **not a tested production release**. Inspired by Q2 Pod's generic card app API, A4Link/q2-jellyfin (MIT), and the Plex authentication and library APIs. No video playback or video decoding.
+
+## Included in the first milestone
+- Plex account login using a 4-character PIN on **https://plex.tv/link** and Ed25519-signed device JWT.
+- Saving the device identity and access token on the microSD card; proactive token refresh after five days.
+- Finding a connected Plex Media Server and listing **music** libraries, albums, artists, tracks.
+- Q2 Pod's native list/selection protocol and single-song direct FLAC/MP3 streaming through a loopback proxy.
+- A 48 MiB Go heap target; server paging is 25 rows per API request. No audio decoding inside this app.
+
+### Known limitations
+- No physical Q2 hardware testing yet. This beta may require changes to device login and server discovery.
+- No album play queue, playlist browsing, artwork, offline downloads, favorites, search, or playback reporting yet.
+- Server connections prefer local endpoints; connections selected from Plex discovery allow plain HTTP **only** to private/loopback IP addresses.
+- Credential file `.plex/auth.json` includes a Plex access token and signing key. **Anyone with read access to the card can extract them.** Don't share this file. Future work will add encryption/device-bound storage.
+- The Q2's system clock needs to be reasonably accurate for TLS validation and signed JWTs. The build includes a CA certificate bundle; it does not bypass TLS verification.
+- On old Q2 Pod firmware without URL queue support, streaming will not work.
+
+## Build and install
+
+Requires Go 1.22+, Python 3, curl, and an internet connection for the CA bundle.
+
+```sh
+./contrib/shanlingq2/build.sh
+```
+
+Unzip `dist/q2-plex-v0.1.0.zip` into the **root** of the Q2's microSD card, preserving the hidden `.plex` folder. In Q2 Pod select **Streaming → Plex Music**.
+
+1. Select **Sign In with Plex**.
+2. On your phone open https://plex.tv/link and enter the code shown on the Q2.
+3. Once the app finds the server, browse **Albums** or **Artists**.
+4. Press a song to start it in Q2 Pod's existing audio player.
+
+For diagnostics inspect `/tmp/q2-plex.log` on the Q2. Never paste `.plex/auth.json` into a public issue.
+
+## Design
+- **Plex API:** HTTPS PIN/JWK login, server discovery, music-only library filtering, metadata paging.
+- **Q2 integration:** a Unix domain socket at `/tmp/q2-plex.browse.sock` using Q2SPOT/1.
+- **Playback:** local relay `127.0.0.1:2328` with `/tmp/q2-plex.urls` + `/tmp/q2-plex.play`. Tokens are passed in HTTPS/HTTP request headers to PMS and **not** in song URLs.
+- **Power:** Q2 Pod firmware controls the device. The app handles SIGTERM and removes its temporary files on exit.
+- No changes to the core Q2 Pod firmware are required.
+
+## References
+- [Q2 Pod card apps and Q2SPOT/1](https://github.com/DiamondBond/q2-pod/blob/main/docs/librespot.md)
+- [q2-jellyfin](https://github.com/A4Link/q2-jellyfin)
+- [Ampcast's Plex adapter](https://github.com/rekkyrosso/ampcast/tree/main/src/services/plex)
+- [Plex developer API](https://developer.plex.tv/pms/)
+
+## License
+MIT. Source written for this project. Protocol details follow Q2 Pod's public documentation.
