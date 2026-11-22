@@ -72,6 +72,7 @@ func (a *app) connectionPage() q2spot.Reply {
 	}
 	rows = append(rows,
 		act("reconnect", "Reconnect Now", ""),
+		list("diagnostics", "Performance Diagnostics", "Opt-in CPU, RAM, battery readings", ""),
 		list("manual", "Server Address", "Set manually", ""),
 		act("logout", "Sign Out", ""),
 	)
