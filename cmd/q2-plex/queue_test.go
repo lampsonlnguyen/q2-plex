@@ -1,8 +1,8 @@
 package main
 
 import (
-	"strings"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/lampsonlnguyen/q2-plex/internal/plex"
@@ -43,7 +43,7 @@ func TestQueueRejectsBadTrack(t *testing.T) {
 func TestNativeQueueBrowseAllTracks(t *testing.T) {
 	tracks := make([]plex.Item, queueLimit)
 	for i := range tracks {
-		tracks[i] = plex.Item{Type: "track", RatingKey: strconv.Itoa(i + 1), Title: "Track " + strconv.Itoa(i + 1)}
+		tracks[i] = plex.Item{Type: "track", RatingKey: strconv.Itoa(i + 1), Title: "Track " + strconv.Itoa(i+1)}
 	}
 	a := &app{queue: playbackQueue{Tracks: tracks}}
 	seen := 0

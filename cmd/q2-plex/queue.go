@@ -146,6 +146,7 @@ func (a *app) playAlbum(ctx context.Context, albumID, selected string) q2spot.Re
 	}
 	return q2spot.Reply{Message: "Playing " + cleanField(tracks[start].Title)}
 }
+
 // queuePage exposes the complete native-player queue through Q2SPOT/1
 // cursors. Q2 Pod renders each page and owns playback, skip, and seek.
 func (a *app) queuePage(args []string) q2spot.Reply {
