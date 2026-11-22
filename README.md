@@ -1,8 +1,8 @@
 # q2-plex
 
-**Experimental v0.3.1** — music-only Plex client for the Shanling Q2 with Q2 Pod firmware.
+**Experimental v0.4.0** — music-only Plex client for the Shanling Q2 with Q2 Pod firmware.
 
-This is an initial implementation, **not a tested production release**. Inspired by Q2 Pod's generic card app API, A4Link/q2-jellyfin (MIT), and the Plex authentication and library APIs. No video playback or video decoding.
+This is a beta requiring testing on the physical Q2, particularly interrupted downloads and local file playback. Inspired by Q2 Pod's generic card app API, A4Link/q2-jellyfin (MIT), and the Plex authentication and library APIs. No video playback or video decoding.
 
 ## Included in the first milestone
 - Plex account login using a 4-character PIN on **https://plex.tv/link** and Ed25519-signed device JWT.
@@ -13,7 +13,7 @@ This is an initial implementation, **not a tested production release**. Inspired
 
 ### Known limitations
 - No physical Q2 hardware testing yet. This beta may require changes to device login and server discovery.
-- No offline downloads or playback reporting yet. Search, playlists, five-star Favorites and cover art are experimental and require device testing.
+- No playback reporting yet. Search, playlists, five-star Favorites and cover art are experimental and require device testing.
 - Server connections prefer local endpoints; connections selected from Plex discovery allow plain HTTP **only** to private/loopback IP addresses.
 - Credential file `.plex/auth.json` includes a Plex access token and signing key. **Anyone with read access to the card can extract them.** Don't share this file. Future work will add encryption/device-bound storage.
 - The Q2's system clock needs to be reasonably accurate for TLS validation and signed JWTs. The build includes a CA certificate bundle; it does not bypass TLS verification.
@@ -27,7 +27,7 @@ Requires Go 1.22+, Python 3, curl, and an internet connection for the CA bundle.
 ./contrib/shanlingq2/build.sh
 ```
 
-Unzip `dist/q2-plex-v0.3.1.zip` into the **root** of the Q2's microSD card, preserving the hidden `.plex` folder. After replacing an existing version, restart the Q2 so the old executable is not still running. In Q2 Pod select **Streaming → Plex Music**.
+Unzip `dist/q2-plex-v0.4.0.zip` into the **root** of the Q2's microSD card, preserving the hidden `.plex` folder. After replacing an existing version, restart the Q2 so the old executable is not still running. In Q2 Pod select **Streaming → Plex Music**. The app stays in Streaming, as in previous releases.
 
 1. Select **Sign In with Plex**.
 2. On your phone open https://plex.tv/link and enter the code shown on the Q2.
@@ -41,7 +41,7 @@ For diagnostics inspect `/tmp/q2-plex.log` on the Q2. Never paste `.plex/auth.js
 - **Plex API:** HTTPS PIN/JWK login, server discovery, music-only library filtering, metadata paging.
 - **Q2 integration:** a Unix domain socket at `/tmp/q2-plex.browse.sock` using Q2SPOT/1.
 - **Playback:** local relay `127.0.0.1:2328` with `/tmp/q2-plex.urls` + `/tmp/q2-plex.play`. Tokens are passed in HTTPS/HTTP request headers to PMS and **not** in song URLs.
-- **Power:** Q2 Pod firmware controls the device. The app handles SIGTERM and Q2 Pod controls system power.
+- **Power:** Q2 Pod firmware controls the device. During downloads the app writes a temporary `hold=1` state to prevent standby, then clears it.
 - No changes to the core Q2 Pod firmware are required.
 
 ## References
@@ -73,3 +73,16 @@ MIT. Source written for this project. Protocol details follow Q2 Pod's public do
 - **Manual Server** allows direct connection to `http://192.168.x.x:32400` for local Plex servers or a verified HTTPS URL. The Plex account must already be signed in and authorized for that server.
 - Q2 firmware expects a reply within 15 seconds; discovery runs in a separate goroutine and the UI immediately returns a pending state.
 - To diagnose a failed connect, inspect `/tmp/q2-plex.log` on your device. Do not share `.plex/auth.json`.
+
+## v0.4.0 Offline Music
+
+- Plex Music **stays under Streaming**. Q2 Pod currently requires Wi-Fi to launch a Streaming app. If you open the app while connected, downloaded audio plays from the SD card without requesting music from Plex. For use with Wi-Fi completely off from boot, browse the files under **PlexMusic/music** in Q2 Pod’s native Folder view; initial startup through Streaming may still wait for Wi-Fi (firmware limitation). Do not set `wifi=1` in the manifest.
+- Open an online **Album → Download Album to SD**, or **Playlist → Download Playlist to SD**. Downloads are processed one at a time, in original FLAC/MP3/etc. quality with no transcoding.
+- Check **Downloads** for progress or cancel. A partial collection is playable immediately; selecting Download again resumes incomplete files when Plex supports byte ranges, and skips already saved tracks when their source sizes match.
+- Browse **Offline Music** for saved albums and playlists, play the entire collection or start at a selected song. Q2 Pod's native player reads local SD-card paths and handles previous/next/pause/seek. No Plex connection or streaming proxy is needed for those songs.
+- **Remove Download...** requires an explicit confirmation and deletes only media no longer used by any other downloaded collection.
+- All downloaded audio and the versioned manifest are under the visible **`PlexMusic/`** folder on the microSD card; **preserve the `PlexMusic/` folder and `.plex/auth.json` during upgrades**. Do not delete or reformat the card while downloading. No media files are ever included in release ZIPs.
+- Downloads use bounded 32 KiB buffers, an atomic `.part` → completed-file rename, track-size limit of 512 MiB and a minimum 256 MiB free-space reserve to protect Q2 Pod's own database and updates.
+- The application does not turn Q2 hardware power on/off; firmware does. An active download is canceled on process shutdown and its next attempt can resume partial content when the Plex source size is known.
+- Current beta scope: download individual albums or audio playlists (up to 250 tracks each), direct original-quality files, offline playback and removal. No scheduled/automatic sync, re-encoding, offline artwork or cross-device position sync yet.
+- If Plex authentication expires while offline, previously downloaded music remains available via **Offline Music**. Reconnect once online to download more music.

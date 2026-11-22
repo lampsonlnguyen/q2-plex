@@ -1,4 +1,5 @@
 name=Plex Music
+row=streaming
 qr=0
 stop=0
 search=Search Plex Music

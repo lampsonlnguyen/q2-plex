@@ -5,11 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+ "path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/lampsonlnguyen/q2-plex/internal/plex"
+ "github.com/lampsonlnguyen/q2-plex/internal/offline"
 	"github.com/lampsonlnguyen/q2-plex/internal/q2spot"
 )
 
@@ -21,6 +23,7 @@ const playFile = "/tmp/q2-plex.play"
 type playbackQueue struct {
 	Tracks []plex.Item
 	At     int
+ Local map[string]string
 }
 
 func cleanField(s string) string {
@@ -36,6 +39,9 @@ func cleanField(s string) string {
 	return s
 }
 func buildURLs(tracks []plex.Item, start int) ([]byte, error) {
+ return buildURLsWithLocal(tracks,start,nil)
+}
+func buildURLsWithLocal(tracks []plex.Item,start int,local map[string]string)([]byte,error){
 	if start < 0 || start >= len(tracks) || len(tracks) > queueLimit {
 		return nil, errors.New("invalid queue index")
 	}
@@ -48,6 +54,16 @@ func buildURLs(tracks []plex.Item, start int) ([]byte, error) {
 		}
 		uri := "http://" + relayAddr + "/song/" + url.PathEscape(it.RatingKey)
 		cover := "http://" + relayAddr + "/cover/" + it.RatingKey
+		if local!=nil {
+			if path,ok:=local[it.RatingKey];ok{
+				if !filepath.IsAbs(path) || !offline.ValidFile(filepath.Base(path)) ||
+					!strings.Contains(filepath.ToSlash(path),"/offline/music/") {
+					return nil,errors.New("invalid local music path")
+				}
+				uri=path
+				cover="" // offline playback never requires the Plex server or relay
+			}
+		}
 		fmt.Fprintf(&b, "%s\t%s\t%s\t%s\t%s\t%d\n", uri, cleanField(it.Title), cleanField(it.GrandparentTitle), cleanField(it.ParentTitle), cover, it.Duration/1000)
 	}
 	if b.Len() > 256<<10 {
@@ -66,8 +82,11 @@ func numericID(s string) bool {
 	}
 	return true
 }
-func (a *app) startQueue(tracks []plex.Item, start int) error {
-	data, err := buildURLs(tracks, start)
+func (a *app) startQueue(tracks []plex.Item,start int)error{
+ return a.startQueueWithLocal(tracks,start,nil)
+}
+func (a *app) startQueueWithLocal(tracks []plex.Item,start int,local map[string]string)error{
+	data,err:=buildURLsWithLocal(tracks,start,local)
 	if err != nil {
 		return err
 	}
@@ -80,7 +99,9 @@ func (a *app) startQueue(tracks []plex.Item, start int) error {
 		return err
 	}
 	a.mu.Lock()
-	a.queue = playbackQueue{Tracks: append([]plex.Item(nil), tracks...), At: start}
+	copies:=map[string]string{}
+	for key,path:=range local{copies[key]=path}
+	a.queue=playbackQueue{Tracks:append([]plex.Item(nil),tracks...),At:start,Local:copies}
 	a.mu.Unlock()
 	return nil
 }
@@ -139,7 +160,7 @@ func (a *app) playQueueIndex(raw string) q2spot.Reply {
 	if err != nil || i < 0 || i >= len(q.Tracks) {
 		return q2spot.Fail("bad", "Invalid queue position")
 	}
-	if err := a.startQueue(q.Tracks, i); err != nil {
+	if err := a.startQueueWithLocal(q.Tracks,i,q.Local);err!=nil{
 		return q2spot.Fail("error", "Could not start queue")
 	}
 	return q2spot.Reply{Message: "Playing " + cleanField(q.Tracks[i].Title)}
