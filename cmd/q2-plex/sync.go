@@ -198,7 +198,7 @@ func (a *app) observeNow(ctx context.Context, now playback.Now) {
 	// The first playing status or a track/state transition is sent immediately.
 	switched := prev == nil || prev.Seq != now.Seq || prev.Index != now.Index
 	stateChanged := prev != nil && prev.State != now.State
-	shouldReport := switched || stateChanged || now.State == "stopped" ||
+	shouldReport := switched || stateChanged ||
 		time.Since(a.syncer.lastReport) >= 10*time.Second
 	if !shouldReport {
 		return
