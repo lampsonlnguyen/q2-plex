@@ -59,8 +59,7 @@ func TestOriginalQualityDownloadAndResume(t *testing.T){
 }
 func TestRejectVideoAndUnsafeParts(t *testing.T){
  if _,err:=MediaExtension(Item{Type:"movie",RatingKey:"8"});err==nil{t.Fatal("allowed movie")}
- for _,part:=range []string{"http://evil.example/video","/library/parts/../secret","/metadata/not-a-part","
-", "/library/parts/9/video.mp4"}{
+ for _,part:=range []string{"http://evil.example/video","/library/parts/../secret","/metadata/not-a-part","bad\r\n", "/library/parts/9/video.mp4"}{
   if strings.Contains(part,"mp4"){continue}
   if validPartPath(part){t.Errorf("accepted unsafe part %q",part)}
  }
