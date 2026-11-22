@@ -18,6 +18,7 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"unicode/utf8"
 
 	"github.com/lampsonlnguyen/q2-plex/internal/offline"
 	"github.com/lampsonlnguyen/q2-plex/internal/plex"
@@ -510,7 +511,12 @@ func field(s string) string {
 		return r
 	}, s)
 	if len(s) > 250 {
-		s = s[:250]
+		end := 250
+		// Never split a UTF-8 character when firmware fields are bounded.
+		for end > 0 && !utf8.RuneStart(s[end]) {
+			end--
+		}
+		s = s[:end]
 	}
 	return s
 }
