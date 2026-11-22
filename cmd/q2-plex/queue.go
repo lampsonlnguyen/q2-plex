@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"path/filepath"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -47,7 +47,7 @@ func buildURLsWithLocal(tracks []plex.Item, start int, local map[string]string) 
 		return nil, errors.New("invalid queue index")
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b,"#Q2URLS/1\tstart=%d\tnow=1\n",start)
+	fmt.Fprintf(&b, "#Q2URLS/1\tstart=%d\tnow=1\n", start)
 	for _, it := range tracks {
 		// Plex music tracks have numeric rating keys. Keep URLs on loopback; no tokens.
 		if it.Type != "track" || !numericID(it.RatingKey) {
@@ -65,9 +65,11 @@ func buildURLsWithLocal(tracks []plex.Item, start int, local map[string]string) 
 				cover = "" // offline playback never requires the Plex server or relay
 			}
 		}
-		fav:="0"
-		if it.UserRating!=nil && *it.UserRating>=9.5{fav="1"}
-		fmt.Fprintf(&b,"%s\t%s\t%s\t%s\t%s\t%d\t%s\t%s\n",uri,cleanField(it.Title),cleanField(it.GrandparentTitle),cleanField(it.ParentTitle),cover,it.Duration/1000,it.RatingKey,fav)
+		fav := "0"
+		if it.UserRating != nil && *it.UserRating >= 9.5 {
+			fav = "1"
+		}
+		fmt.Fprintf(&b, "%s\t%s\t%s\t%s\t%s\t%d\t%s\t%s\n", uri, cleanField(it.Title), cleanField(it.GrandparentTitle), cleanField(it.ParentTitle), cover, it.Duration/1000, it.RatingKey, fav)
 	}
 	if b.Len() > 256<<10 {
 		return nil, errors.New("queue too large")
@@ -98,12 +100,12 @@ func (a *app) startQueueWithLocal(tracks []plex.Item, start int, local map[strin
 	if err := atomic(queueFile, data); err != nil {
 		return err
 	}
-	seq:=strconv.FormatInt(time.Now().UnixNano(),10)
-	if err:=atomic(playFile,[]byte(seq+" "+queueFile));err!=nil{
+	seq := strconv.FormatInt(time.Now().UnixNano(), 10)
+	if err := atomic(playFile, []byte(seq+" "+queueFile)); err != nil {
 		return err
 	}
-	if err:=a.rememberQueue(tracks,start,local,seq);err!=nil{
-		fmt.Fprintf(os.Stderr,"q2-plex: save last queue: %v\n",err)
+	if err := a.rememberQueue(tracks, start, local, seq); err != nil {
+		fmt.Fprintf(os.Stderr, "q2-plex: save last queue: %v\n", err)
 	}
 	a.mu.Lock()
 	copies := map[string]string{}
