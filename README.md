@@ -1,6 +1,6 @@
 # q2-plex
 
-**Experimental v0.4.0** — music-only Plex client for the Shanling Q2 with Q2 Pod firmware.
+**Experimental v0.5.0** — music-only Plex client for the Shanling Q2 with Q2 Pod firmware.
 
 This is a beta requiring testing on the physical Q2, particularly interrupted downloads and local file playback. Inspired by Q2 Pod's generic card app API, A4Link/q2-jellyfin (MIT), and the Plex authentication and library APIs. No video playback or video decoding.
 
@@ -27,7 +27,7 @@ Requires Go 1.22+, Python 3, curl, and an internet connection for the CA bundle.
 ./contrib/shanlingq2/build.sh
 ```
 
-Unzip `dist/q2-plex-v0.4.0.zip` into the **root** of the Q2's microSD card, preserving the hidden `.plex` folder. After replacing an existing version, restart the Q2 so the old executable is not still running. In Q2 Pod select **Streaming → Plex Music**. The app stays in Streaming, as in previous releases.
+Unzip `dist/q2-plex-v0.5.0.zip` into the **root** of the Q2's microSD card, preserving the hidden `.plex` folder. After replacing an existing version, restart the Q2 so the old executable is not still running. In Q2 Pod select **Streaming → Plex Music**. The app stays in Streaming, as in previous releases.
 
 1. Select **Sign In with Plex**.
 2. On your phone open https://plex.tv/link and enter the code shown on the Q2.
@@ -86,3 +86,14 @@ MIT. Source written for this project. Protocol details follow Q2 Pod's public do
 - The application does not turn Q2 hardware power on/off; firmware does. An active download is canceled on process shutdown and its next attempt can resume partial content when the Plex source size is known.
 - Current beta scope: download individual albums or audio playlists (up to 250 tracks each), direct original-quality files, offline playback and removal. No scheduled/automatic sync, re-encoding, offline artwork or cross-device position sync yet.
 - If Plex authentication expires while offline, previously downloaded music remains available via **Offline Music**. Reconnect once online to download more music.
+
+## v0.5.0 Playback synchronization and last queue
+
+- The application **remains in Streaming → Plex Music**, and streaming remains the default. No device power-control changes.
+- Where Q2 Pod firmware supports `now`, q2-plex adds `now=1` to native playback queues, reads `/tmp/q2-plex.now`, and forwards *actual* play/pause/stop and positions to Plex's `/:/timeline` approximately every ten seconds. Plex decides the resulting history and play counts; no duplicate direct scrobbles are sent.
+- On firmware with `fav`, tapping Now Playing's heart writes a durable `.plex/fav.log` record that q2-plex applies to Plex five-star track ratings. The app also advertises `favdir=PlexMusic` so native local favorites can sync. Events not accepted by Plex remain queued to retry when connected.
+- `Last Queue` stores track details, local paths, last song, and reported playback position in `.plex/last-queue.json`. Select **Last Queue → Restore Last Queue** to rebuild the native player queue from the last song.
+- **Exact-second resume is not available** through the current documented Q2 card-app interface: the saved song restarts from its beginning. The previous position is displayed for reference.
+- Older firmware without the new `now` or `fav` capabilities continues to play music and download albums, but cannot automatically report live progress or heart changes.
+- Offline history backfill and automatic ratings reconciliation from other Plex clients are not included in this beta. A Plex connection is required to report listening history; downloaded music still plays locally.
+- Preserve `.plex/auth.json`, `.plex/last-queue.json`, `.plex/fav.log`, and `PlexMusic/` while upgrading.

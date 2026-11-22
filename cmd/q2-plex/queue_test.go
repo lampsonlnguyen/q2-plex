@@ -17,10 +17,10 @@ func TestQueueStartFromTrack(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := string(data)
-	if !strings.HasPrefix(s, "#Q2URLS/1\tstart=1\n") {
+	if !strings.HasPrefix(s, "#Q2URLS/1\tstart=1\tnow=1\n") {
 		t.Fatalf("start %s", s)
 	}
-	if !strings.Contains(s, "http://127.0.0.1:2328/song/456\tTwo\tArtist\tAlbum\thttp://127.0.0.1:2328/cover/456\t92\n") {
+	if !strings.Contains(s, "http://127.0.0.1:2328/song/456\tTwo\tArtist\tAlbum\thttp://127.0.0.1:2328/cover/456\t92\t456\t0\n") {
 		t.Fatal(s)
 	}
 	if strings.Contains(s, "X-Plex-Token") {

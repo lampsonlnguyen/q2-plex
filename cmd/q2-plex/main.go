@@ -24,7 +24,7 @@ import (
 	"github.com/lampsonlnguyen/q2-plex/internal/q2spot"
 )
 
-const version = "0.4.0"
+const version = "0.5.0"
 const relayAddr = "127.0.0.1:2328"
 
 type app struct {
@@ -39,6 +39,7 @@ type app struct {
 	offline       *offline.Store
 	download      downloadJob
 	ctx           context.Context
+	syncer        *playbackSync
 }
 
 func main() {
@@ -60,10 +61,14 @@ func main() {
 		log.Printf("offline library unavailable: %v", storeErr)
 	}
 	_ = os.Remove("/tmp/q2-plex.state")
-	a := &app{client: cl, art: art, offline: stored}
+	pSync,syncErr:=newPlaybackSync(*dir)
+	if syncErr!=nil {log.Printf("saved queue unavailable: %v",syncErr)}
+	a := &app{client:cl,art:art,offline:stored,syncer:pSync}
+	a.loadSavedQueue()
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	a.ctx = ctx
+	a.ctx=ctx
 	defer cancel()
+	if a.syncer!=nil{go a.watchPlayback(ctx)}
 	go a.initialize(ctx)
 	server := &http.Server{Addr: relayAddr, Handler: http.HandlerFunc(a.relay), ReadHeaderTimeout: 5 * time.Second}
 	ln, err := net.Listen("tcp4", relayAddr)
@@ -227,7 +232,7 @@ func (a *app) root() q2spot.Reply {
 		}}
 	}
 	if !signed {
-		rows := []q2spot.Row{list("offline", "Offline Music", "Saved on SD card", ""), act("login", "Sign In with Plex", "")}
+		rows := []q2spot.Row{list("offline","Offline Music","Saved on SD card",""),list("lastqueue","Last Queue","Restore saved playback",""),act("login","Sign In with Plex","")}
 		if busy {
 			rows = append(rows, text("Getting login code..."))
 		}
@@ -241,7 +246,7 @@ func (a *app) root() q2spot.Reply {
 			return ""
 		}(), Rows: rows}
 	}
-	rows := []q2spot.Row{list("offline", "Offline Music", "Play without Wi-Fi", ""), list("downloadstatus", "Downloads", "Save music to microSD", "")}
+	rows := []q2spot.Row{list("offline","Offline Music","Play without Wi-Fi",""),list("lastqueue","Last Queue","Resume music",""),list("downloadstatus","Downloads","Save music to microSD","")}
 	if server != "" && lib != "" {
 		rows = append(rows, list("albums", "Albums", server, ""), list("artists", "Artists", server, ""), list("playlists", "Playlists", "Audio only", ""), list("favorites", "Favorites", "Five-star songs", ""), list("searchpage", "Search Music", "", ""), list("libraries", "Music Libraries", "Choose library", ""), list("queue", "Play Queue", "Current album", ""))
 	} else if !busy {
@@ -312,14 +317,20 @@ func (a *app) handle(req q2spot.Request) q2spot.Reply {
 		a.client.State.ServerURL = ""
 		a.client.State.LibraryID = ""
 		err := a.client.Save()
-		a.pin = plex.Pin{}
-		a.lastError = ""
+		a.pin=plex.Pin{}
+		a.lastError=""
 		a.mu.Unlock()
+		if err==nil&&a.syncer!=nil{
+			if clearErr:=a.syncer.store.Clear();clearErr!=nil{log.Printf("clear saved queue: %v",clearErr)}
+			_ = os.Remove(filepath.Join(a.syncer.root,"fav.log"))
+			_ = os.Remove(filepath.Join(a.syncer.root,"fav.log.taking"))
+		}
 		if err != nil {
 			return q2spot.Fail("error", "Could not save sign-out")
 		}
 		return a.root()
 	}
+	if reply,handled:=a.handleSync(req);handled{return reply}
 	if reply, handled := a.handleOffline(req); handled {
 		return reply
 	}
