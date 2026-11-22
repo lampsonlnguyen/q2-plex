@@ -65,6 +65,12 @@ type Item struct {
 	Title            string `json:"title"`
 	ParentTitle      string `json:"parentTitle"`
 	ParentRatingKey  string `json:"parentRatingKey"`
+	Thumb            string `json:"thumb"`
+	ParentThumb       string `json:"parentThumb"`
+	GrandparentThumb  string `json:"grandparentThumb"`
+	Composite         string `json:"composite"`
+	PlaylistType      string `json:"playlistType"`
+	UserRating        *float64 `json:"userRating"`
 	GrandparentTitle string `json:"grandparentTitle"`
 	Duration         int64  `json:"duration"`
 	LeafCount        int    `json:"leafCount"`
@@ -155,7 +161,7 @@ func (c *Client) Save() error {
 func (c *Client) headers(req *http.Request, token string) {
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-Plex-Product", Product)
-	req.Header.Set("X-Plex-Version", "0.1.0")
+	req.Header.Set("X-Plex-Version", "0.3.0")
 	req.Header.Set("X-Plex-Platform", "Linux")
 	req.Header.Set("X-Plex-Device", "Shanling Q2")
 	req.Header.Set("X-Plex-Client-Identifier", c.State.ClientID)
@@ -368,6 +374,11 @@ func (c *Client) Items(ctx context.Context, kind, id string, offset int) ([]Item
 		path = "/library/metadata/" + url.PathEscape(id) + "/children"
 	case "album":
 		path = "/library/metadata/" + url.PathEscape(id) + "/children"
+	case "playlist":
+		if !ratingKey(id) { return nil,false,errors.New("invalid playlist ID") }
+		path = "/playlists/" + url.PathEscape(id) + "/items"
+	case "favorites":
+		path = "/library/sections/" + url.PathEscape(c.State.LibraryID) + "/all?type=10&userRating=10
 	default:
 		return nil, false, errors.New("unknown library view")
 	}

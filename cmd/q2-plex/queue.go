@@ -40,7 +40,8 @@ func buildURLs(tracks []plex.Item, start int) ([]byte,error) {
   // Plex music tracks have numeric rating keys. Keep URLs on loopback; no tokens.
   if it.Type!="track" || !numericID(it.RatingKey) {return nil,errors.New("invalid track in queue")}
   uri:="http://"+relayAddr+"/song/"+url.PathEscape(it.RatingKey)
-  fmt.Fprintf(&b,"%s\t%s\t%s\t%s\t\t%d\n",uri,cleanField(it.Title),cleanField(it.GrandparentTitle),cleanField(it.ParentTitle),it.Duration/1000)
+  cover := "http://" + relayAddr + "/cover/" + it.RatingKey
+  fmt.Fprintf(&b,"%s\t%s\t%s\t%s\t%s\t%d\n",uri,cleanField(it.Title),cleanField(it.GrandparentTitle),cleanField(it.ParentTitle),cover,it.Duration/1000)
  }
  if b.Len() > 256<<10 {return nil,errors.New("queue too large")}
  return []byte(b.String()),nil

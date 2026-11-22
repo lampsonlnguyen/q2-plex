@@ -23,7 +23,7 @@ import (
 	"github.com/lampsonlnguyen/q2-plex/internal/q2spot"
 )
 
-const version = "0.2.0"
+const version = "0.3.0"
 const relayAddr = "127.0.0.1:2328"
 
 type app struct {
@@ -33,6 +33,7 @@ type app struct {
 	busy      bool
 	lastError string
 	queue playbackQueue
+	art *artworkCache
 }
 
 func main() {
@@ -45,7 +46,9 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	a := &app{client: cl}
+	art, artErr := newArtworkCache(filepath.Join(*tmp, "q2-plex.art"))
+	if artErr != nil { log.Printf("art disabled: %v", artErr) }
+	a := &app{client: cl, art: art}
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 	go a.initialize(ctx)
@@ -210,7 +213,7 @@ func (a *app) root() q2spot.Reply {
 	}
 	rows := []q2spot.Row{}
 	if server != "" && lib != "" {
-		rows = append(rows, list("albums", "Albums", server, ""), list("artists", "Artists", server, ""), list("libraries", "Music Libraries", "Choose library", ""), list("queue", "Play Queue", "Current album", ""))
+		rows = append(rows, list("albums", "Albums", server, ""), list("artists", "Artists", server, ""), list("playlists", "Playlists", "Audio only", ""), list("favorites", "Favorites", "Five-star songs", ""), list("searchpage", "Search Music", "", ""), list("libraries", "Music Libraries", "Choose library", ""), list("queue", "Play Queue", "Current album", ""))
 	} else if !busy {
 		rows = append(rows, act("reconnect", "Connect to Plex", ""))
 	}
@@ -262,6 +265,7 @@ func (a *app) handle(req q2spot.Request) q2spot.Reply {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
+	if reply, handled := a.extra(ctx, req); handled { return reply }
 	switch req.Op {
 	case "libraries":
 		libs, err := a.client.Libraries(ctx)
@@ -309,22 +313,19 @@ func (a *app) handle(req q2spot.Request) q2spot.Reply {
 		if err != nil {
 			return q2spot.Fail("error", "Could not browse music")
 		}
+
 		r := q2spot.Reply{}
+		art := make([]artworkJob,0,len(items))
 		if req.Op == "album" && off == 0 {
 			r.Rows = append(r.Rows, act("playalbum", "Play Album", id))
+			r.Rows = append(r.Rows, text("Hold Play/Pause on a song to toggle Favorite"))
 		}
 		for _, it := range items {
-			switch it.Type {
-			case "artist":
-				r.Rows = append(r.Rows, list("artist", it.Title, fmt.Sprintf("%d tracks", it.LeafCount), it.RatingKey))
-			case "album":
-				r.Rows = append(r.Rows, list("album", it.Title, it.ParentTitle, it.RatingKey))
-			case "track":
-				ctx := it.RatingKey
-				if req.Op == "album" {
-					ctx = id + ":" + it.RatingKey
-				}
-				r.Rows = append(r.Rows, act("play", it.Title, ctx))
+			if it.Type != "album" && it.Type != "artist" && it.Type != "track" { continue }
+			row := musicRow(it,req.Op,id)
+			r.Rows = append(r.Rows,row)
+			if thumb:=itemArtwork(it);thumb!="" && it.Type!="track" {
+				art=append(art,artworkJob{row:row,source:thumb})
 			}
 		}
 		if len(r.Rows) == 0 {
@@ -333,7 +334,7 @@ func (a *app) handle(req q2spot.Request) q2spot.Reply {
 		if more {
 			r.Cursor = strconv.Itoa(off + len(items))
 		}
-		return r
+		return a.withArt(r,art)
 	case "playalbum":
 		if len(req.Args) < 1 { return q2spot.Fail("bad", "Missing album") }
 		return a.playAlbum(ctx, req.Args[0], "")
@@ -345,6 +346,11 @@ func (a *app) handle(req q2spot.Request) q2spot.Reply {
 	case "play":
 		if len(req.Args) < 1 {
 			return q2spot.Fail("bad", "Missing track")
+		}
+		if strings.HasPrefix(req.Args[0],"pl:") {
+			parts:=strings.SplitN(req.Args[0],":",3)
+			if len(parts)!=3 {return q2spot.Fail("bad","Invalid playlist track")}
+			return a.playPlaylist(ctx,parts[1],parts[2])
 		}
 		if album, song, ok := strings.Cut(req.Args[0], ":"); ok && album != "" && song != "" {
 			return a.playAlbum(ctx, album, song)
@@ -379,22 +385,30 @@ func atomic(path string, b []byte) error {
 	}
 	return os.Rename(temp, path)
 }
-func (a *app) relay(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "GET" && r.Method != "HEAD" {
-		http.Error(w, "method not allowed", 405)
-		return
-	}
-	if !strings.HasPrefix(r.URL.Path, "/song/") {
-		http.NotFound(w, r)
-		return
-	}
-	id := strings.TrimPrefix(r.URL.Path, "/song/")
-	if id == "" || len(id) > 40 || strings.Trim(id, "0123456789") != "" {
-		http.NotFound(w, r)
-		return
-	}
-	// Do not truncate long FLAC playback using an arbitrary elapsed-time limit.
-	if err := a.client.Stream(r.Context(), id, w, r); err != nil {
-		log.Printf("stream %s: %v", id, err)
-	}
+func (a *app) relay(w http.ResponseWriter,r *http.Request){
+ if r.Method!="GET" && r.Method!="HEAD" {
+  http.Error(w,"method not allowed",http.StatusMethodNotAllowed);return
+ }
+ kind,id,ok:=strings.Cut(strings.TrimPrefix(r.URL.Path,"/"),"/")
+ if !ok||!numericID(id) || (kind!="song" && kind!="cover"){
+  http.NotFound(w,r);return
+ }
+ if kind=="song"{
+  // Direct streaming remains in Q2 Pod's native player and honors HTTP Range.
+  if err:=a.client.Stream(r.Context(),id,w,r);err!=nil{log.Printf("stream %s: %v",id,err)}
+  return
+ }
+ // Now Playing cover served only on loopback, without a Plex token in the URL.
+ ctx,cancel:=context.WithTimeout(r.Context(),8*time.Second)
+ defer cancel()
+ track,err:=a.client.Track(ctx,id)
+ if err!=nil{http.Error(w,"cover metadata unavailable",502);return}
+ src:=itemArtwork(track)
+ if src==""{http.NotFound(w,r);return}
+ data,err:=a.client.Thumbnail(ctx,src,256)
+ if err!=nil{log.Printf("cover %s: %v",id,err);http.Error(w,"cover unavailable",502);return}
+ w.Header().Set("Content-Type","image/jpeg")
+ w.Header().Set("Content-Length",strconv.Itoa(len(data)))
+ w.Header().Set("Cache-Control","private,max-age=3600")
+ if r.Method!="HEAD"{_,_=w.Write(data)}
 }

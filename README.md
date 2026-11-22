@@ -1,6 +1,6 @@
 # q2-plex
 
-**Experimental v0.2.0** — music-only Plex client for the Shanling Q2 with Q2 Pod firmware.
+**Experimental v0.3.0** — music-only Plex client for the Shanling Q2 with Q2 Pod firmware.
 
 This is an initial implementation, **not a tested production release**. Inspired by Q2 Pod's generic card app API, A4Link/q2-jellyfin (MIT), and the Plex authentication and library APIs. No video playback or video decoding.
 
@@ -13,7 +13,7 @@ This is an initial implementation, **not a tested production release**. Inspired
 
 ### Known limitations
 - No physical Q2 hardware testing yet. This beta may require changes to device login and server discovery.
-- No playlist browsing, artwork, offline downloads, favorites, search, or playback reporting yet.
+- No offline downloads or playback reporting yet. Search, playlists, five-star Favorites and cover art are experimental and require device testing.
 - Server connections prefer local endpoints; connections selected from Plex discovery allow plain HTTP **only** to private/loopback IP addresses.
 - Credential file `.plex/auth.json` includes a Plex access token and signing key. **Anyone with read access to the card can extract them.** Don't share this file. Future work will add encryption/device-bound storage.
 - The Q2's system clock needs to be reasonably accurate for TLS validation and signed JWTs. The build includes a CA certificate bundle; it does not bypass TLS verification.
@@ -27,11 +27,11 @@ Requires Go 1.22+, Python 3, curl, and an internet connection for the CA bundle.
 ./contrib/shanlingq2/build.sh
 ```
 
-Unzip `dist/q2-plex-v0.2.0.zip` into the **root** of the Q2's microSD card, preserving the hidden `.plex` folder. In Q2 Pod select **Streaming → Plex Music**.
+Unzip `dist/q2-plex-v0.3.0.zip` into the **root** of the Q2's microSD card, preserving the hidden `.plex` folder. In Q2 Pod select **Streaming → Plex Music**.
 
 1. Select **Sign In with Plex**.
 2. On your phone open https://plex.tv/link and enter the code shown on the Q2.
-3. Once the app finds the server, browse **Albums** or **Artists**.
+3. Once the app finds the server, browse **Albums**, **Artists**, **Playlists**, **Favorites**, or **Search**.
 4. Select **Play Album** to stream the album in track order, or press a song to begin from that track.
 5. Open **Play Queue** to jump to a queued song. Q2 Pod's hardware player handles skip and seek.
 
@@ -53,8 +53,16 @@ For diagnostics inspect `/tmp/q2-plex.log` on the Q2. Never paste `.plex/auth.js
 ## License
 MIT. Source written for this project. Protocol details follow Q2 Pod's public documentation.
 
-## v0.2.0 playback
+## v0.3.0 playback
 - Album track queues are capped at 250 items to bound memory. Q2 Pod's native player handles next, previous, play/pause and seeks.
 - Plex playback requests are proxied through the existing loopback relay; its HTTP client has no 9-second total request timeout for long tracks.
 - The album track selected starts at its original position; subsequent tracks play automatically.
 - Hardware playback, login, and FLAC compatibility still require validation on the physical Q2.
+
+## v0.3.0 Music Library
+- Search is available through the Q2 T9 search UI; queries use Plex hubs, limited to music artists, albums and tracks.
+- Audio-only Plex playlists can be browsed and played in track order, with bounded queues (max 250 tracks).
+- **Hold Play/Pause on a song row** to toggle five-star favorite status (Plex user rating 10); the Favorites page lists five-star tracks. This changes the Plex rating, not a separate Plexamp-only flag.
+- Album/artist/playlist list covers use 64px JPEGs in a bounded /tmp cache. Now Playing art uses the existing token-free loopback relay.
+- Existing login state in `.plex/auth.json` is preserved when replacing only bundled app files.
+- **Known**: full library search result relevance depends on PMS; playlist duplicates resolve to the first matching track for Play-from-here; hardware tests still needed.
