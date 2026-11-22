@@ -15,7 +15,7 @@ jobs:
       - name: Format Go sources
         run: gofmt -w $(find cmd internal -name '*.go')
       - name: Commit formatted source to branch
-        if: github.event_name == 'push' && github.ref_name == 'feature/music-client-bootstrap'
+        if: github.event_name == 'push' && github.ref_name != 'main'
         run: |
           if ! git diff --quiet -- cmd internal; then
             git config user.name 'github-actions[bot]'
