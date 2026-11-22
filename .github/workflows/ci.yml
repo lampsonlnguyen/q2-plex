@@ -28,6 +28,8 @@ jobs:
         run: go test ./...
       - name: Package MIPS32 app
         run: ./contrib/shanlingq2/build.sh
+      - name: Verify install archive and 52px/40px icons
+        run: python3 contrib/shanlingq2/verify_release.py dist/q2-plex-v1.0.0.zip
       - uses: actions/upload-artifact@v4
         with:
           name: q2-plex-beta
