@@ -378,7 +378,7 @@ func (c *Client) Items(ctx context.Context, kind, id string, offset int) ([]Item
 		if !ratingKey(id) { return nil,false,errors.New("invalid playlist ID") }
 		path = "/playlists/" + url.PathEscape(id) + "/items"
 	case "favorites":
-		path = "/library/sections/" + url.PathEscape(c.State.LibraryID) + "/all?type=10&userRating=10
+		path = "/library/sections/" + url.PathEscape(c.State.LibraryID) + "/all?type=10&userRating=10"
 	default:
 		return nil, false, errors.New("unknown library view")
 	}
