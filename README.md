@@ -32,7 +32,8 @@ Unzip `dist/q2-plex-v0.2.0.zip` into the **root** of the Q2's microSD card, pres
 1. Select **Sign In with Plex**.
 2. On your phone open https://plex.tv/link and enter the code shown on the Q2.
 3. Once the app finds the server, browse **Albums** or **Artists**.
-4. Select **Play Album** to stream the album in track order, or press a song to begin from that track.\n5. Open **Play Queue** to jump to a queued song. Q2 Pod's hardware player handles skip and seek.
+4. Select **Play Album** to stream the album in track order, or press a song to begin from that track.
+5. Open **Play Queue** to jump to a queued song. Q2 Pod's hardware player handles skip and seek.
 
 For diagnostics inspect `/tmp/q2-plex.log` on the Q2. Never paste `.plex/auth.json` into a public issue.
 
