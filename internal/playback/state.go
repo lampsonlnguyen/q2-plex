@@ -51,8 +51,8 @@ func ValidLocal(path string) bool {
  prefix:="/mnt/mmc/PlexMusic/music/"
  if !strings.HasPrefix(path,prefix)||filepath.Clean(path)!=path{return false}
  name:=strings.TrimPrefix(path,prefix)
- if strings.ContainsAny(name,"/\	
-")||len(name)>80{return false}
+ if strings.ContainsAny(name, "/\\") || len(name)>80{return false}
+ for _,ch:=range name {if ch<32||ch==127{return false}}
  dash:=strings.IndexByte(name,'-')
  if dash!=8{return false}
  for _,ch:=range name[:dash]{
