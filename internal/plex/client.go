@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
@@ -116,7 +117,8 @@ func Load(dir string) (*Client, error) {
 		}
 		c.State.ClientID = hex.EncodeToString(id)
 		c.State.PrivateKey = base64.RawURLEncoding.EncodeToString(priv)
-		c.State.KeyID = hex.EncodeToString(pub[:8])
+		hash := sha256.Sum256(append(priv.Seed(), pub...))
+		c.State.KeyID = hex.EncodeToString(hash[:])
 		if err = c.Save(); err != nil {
 			return nil, err
 		}
@@ -244,7 +246,7 @@ func (c *Client) StartPIN(ctx context.Context) (Pin, error) {
 	pub := priv.Public().(ed25519.PublicKey)
 	body, _ := json.Marshal(map[string]any{"jwk": map[string]string{
 		"kty": "OKP", "crv": "Ed25519", "x": base64.RawURLEncoding.EncodeToString(pub), "kid": c.State.KeyID, "alg": "EdDSA", "use": "sig",
-	}, "strong": false})
+	}})
 	var pin Pin
 	err = c.Request(ctx, "POST", c.Cloud, "/api/v2/pins", "", strings.NewReader(string(body)), &pin)
 	if err == nil && (pin.ID == 0 || pin.Code == "") {
