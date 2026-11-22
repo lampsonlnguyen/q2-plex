@@ -78,6 +78,7 @@ func (a *app) setError(err error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.busy = false
+	a.pin = plex.Pin{}
 	if err != nil {
 		a.lastError = err.Error()
 	} else {
