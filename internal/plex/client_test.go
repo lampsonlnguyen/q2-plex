@@ -1,6 +1,7 @@
 package plex
 
 import (
+ "context"
  "crypto/ed25519"
  "encoding/base64"
  "encoding/json"
@@ -29,9 +30,9 @@ func TestPINAndDeviceJWT(t *testing.T){
   _,_=w.Write([]byte(`{"authToken":"test-token"}`))
  }))
  defer s.Close();c.Cloud=s.URL
- pin,err:=c.StartPIN(t.Context());if err!=nil{t.Fatal(err)}
+ pin,err:=c.StartPIN(context.Background());if err!=nil{t.Fatal(err)}
  if pin.Code!="1234"{t.Fatalf("code=%s",pin.Code)}
- token,err:=c.PollPIN(t.Context(),pin.ID);if err!=nil{t.Fatal(err)}
+ token,err:=c.PollPIN(context.Background(),pin.ID);if err!=nil{t.Fatal(err)}
  if token!="test-token"{t.Fatal("no token")}
  jwt,err:=c.jwt("abc");if err!=nil{t.Fatal(err)}
  parts:=strings.Split(jwt,".");if len(parts)!=3{t.Fatal("bad JWT")}
