@@ -23,7 +23,7 @@ import (
 	"github.com/lampsonlnguyen/q2-plex/internal/q2spot"
 )
 
-const version = "0.3.0"
+const version = "0.3.1"
 const relayAddr = "127.0.0.1:2328"
 
 type app struct {
@@ -32,6 +32,7 @@ type app struct {
 	pin       plex.Pin
 	busy      bool
 	lastError string
+	manualAddress string
 	queue     playbackQueue
 	art       *artworkCache
 }
@@ -77,7 +78,7 @@ func (a *app) initialize(ctx context.Context) {
 	hasToken := a.client.State.Token != ""
 	a.mu.Unlock()
 	if hasToken {
-		a.connect(ctx)
+		a.launchConnection("")
 	}
 }
 func (a *app) setError(err error) {
@@ -91,41 +92,47 @@ func (a *app) setError(err error) {
 		a.lastError = ""
 	}
 }
+// launchConnection marks the UI busy synchronously, before returning a response
+// to Q2 Pod's action request. HTTP work takes place on a separate goroutine.
+func (a *app) launchConnection(manual string) {
+ a.mu.Lock()
+ if a.busy {a.mu.Unlock();return}
+ a.busy=true
+ a.lastError=""
+ a.mu.Unlock()
+ go a.connectNow(context.Background(),manual)
+}
 func (a *app) connect(ctx context.Context) {
-	a.mu.Lock()
-	if a.busy {
-		a.mu.Unlock()
-		return
-	}
-	a.busy = true
-	a.lastError = ""
-	a.mu.Unlock()
-	defer func() { a.mu.Lock(); a.busy = false; a.mu.Unlock() }()
-	// Only refresh a token when it is old; on a failed refresh the old token remains.
-	if time.Since(time.Unix(a.client.State.TokenTime, 0)) > 5*24*time.Hour {
-		refreshCtx, cancel := context.WithTimeout(ctx, 12*time.Second)
-		err := a.client.Refresh(refreshCtx)
-		cancel()
-		if err != nil {
-			a.setError(fmt.Errorf("Plex login expired: %w", err))
-			return
-		}
-	}
-	discoverCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	err := a.client.Discover(discoverCtx)
-	cancel()
-	if err != nil {
-		a.setError(err)
-		return
-	}
-	libsCtx, done := context.WithTimeout(ctx, 10*time.Second)
-	libs, err := a.client.Libraries(libsCtx)
-	done()
-	if err == nil && len(libs) > 0 && a.client.State.LibraryID == "" {
-		a.client.State.LibraryID = libs[0].Key
-		err = a.client.Save()
-	}
-	a.setError(err)
+ a.launchConnection("")
+}
+func (a *app) connectNow(ctx context.Context,manual string) {
+ defer func(){a.mu.Lock();a.busy=false;a.mu.Unlock()}()
+ var err error
+ defer func(){
+  a.mu.Lock()
+  if err!=nil{
+   a.lastError=err.Error()
+   log.Printf("Plex connection: %v",err)
+  }else{a.lastError=""}
+  a.mu.Unlock()
+ }()
+ if time.Since(time.Unix(a.client.State.TokenTime,0))>5*24*time.Hour {
+  refreshCtx,cancel:=context.WithTimeout(ctx,12*time.Second)
+  err=a.client.Refresh(refreshCtx)
+  cancel()
+  if err!=nil{err=fmt.Errorf("Plex session refresh: %w",err);return}
+ }
+ connectCtx,cancel:=context.WithTimeout(ctx,35*time.Second)
+ if manual!="" {
+  err=a.client.ConnectDirect(connectCtx,manual)
+ }else{
+  err=a.client.Discover(connectCtx)
+ }
+ cancel()
+ if err!=nil{return}
+ // ConnectDirect/Discover already selects a music library, avoiding a second
+ // separate network call before showing Albums/Artists on the device.
+ log.Printf("Plex music connected: %s",a.client.State.ServerName)
 }
 func (a *app) beginLogin() {
 	a.mu.Lock()
@@ -170,7 +177,7 @@ func (a *app) beginLogin() {
 					a.setError(saveErr)
 					return
 				}
-				a.connect(context.Background())
+				a.launchConnection("")
 				return
 			}
 		}
@@ -217,8 +224,11 @@ func (a *app) root() q2spot.Reply {
 	if server != "" && lib != "" {
 		rows = append(rows, list("albums", "Albums", server, ""), list("artists", "Artists", server, ""), list("playlists", "Playlists", "Audio only", ""), list("favorites", "Favorites", "Five-star songs", ""), list("searchpage", "Search Music", "", ""), list("libraries", "Music Libraries", "Choose library", ""), list("queue", "Play Queue", "Current album", ""))
 	} else if !busy {
-		rows = append(rows, act("reconnect", "Connect to Plex", ""))
-	}
+        rows=append(rows,act("reconnect","Connect to Plex",""))
+    }
+    if server=="" || lib=="" {
+        rows=append(rows,list("manual","Manual Server","Connect by IP address",""))
+    }
 	if busy {
 		rows = append(rows, text("Connecting to Plex..."))
 	}
@@ -241,8 +251,28 @@ func (a *app) handle(req q2spot.Request) q2spot.Reply {
 		a.beginLogin()
 		return a.root()
 	case "reconnect":
-		go a.connect(context.Background())
-		return a.root()
+        a.launchConnection("")
+        return a.root()
+    case "manual":
+        a.mu.Lock()
+        address:=a.manualAddress
+        a.mu.Unlock()
+        return q2spot.Reply{Rows:[]q2spot.Row{
+          {Kind:"field",URI:"serveraddress",Title:"Server Address",Subtitle:address,Position:address},
+          act("connectmanual","Connect to Address",""),
+          text("Example: http://192.168.1.10:32400"),
+        }}
+    case "serveraddress":
+        if len(req.Args)==0{return q2spot.Fail("bad","Missing server address")}
+        value:=strings.TrimSpace(req.Args[len(req.Args)-1])
+        if len(value)>180{return q2spot.Fail("bad","Address too long")}
+        a.mu.Lock();a.manualAddress=value;a.mu.Unlock()
+        return a.handle(q2spot.Request{Op:"manual"})
+    case "connectmanual":
+        a.mu.Lock();address:=a.manualAddress;a.mu.Unlock()
+        if address==""{return q2spot.Fail("bad","Enter a server address")}
+        a.launchConnection(address)
+        return a.root()
 	case "logout":
 		a.mu.Lock()
 		a.client.State.Token = ""

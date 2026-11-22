@@ -17,4 +17,4 @@ if [ -n "${Q2_PLEX_CA_FILE:-}" ] && [ -r "$Q2_PLEX_CA_FILE" ]; then
 else
   curl -fsSL --max-time 30 https://curl.se/ca/cacert.pem -o "$STAGE/cacert.pem"
 fi
-python3 contrib/shanlingq2/package.py "$STAGE" "$OUT/q2-plex-v0.3.0.zip"
+python3 contrib/shanlingq2/package.py "$STAGE" "$OUT/q2-plex-v0.3.1.zip"

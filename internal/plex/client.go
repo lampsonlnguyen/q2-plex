@@ -161,7 +161,7 @@ func (c *Client) Save() error {
 func (c *Client) headers(req *http.Request, token string) {
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-Plex-Product", Product)
-	req.Header.Set("X-Plex-Version", "0.3.0")
+	req.Header.Set("X-Plex-Version", "0.3.1")
 	req.Header.Set("X-Plex-Platform", "Linux")
 	req.Header.Set("X-Plex-Device", "Shanling Q2")
 	req.Header.Set("X-Plex-Client-Identifier", c.State.ClientID)
@@ -312,42 +312,82 @@ func (c *Client) Servers(ctx context.Context) ([]Resource, error) {
 	}
 	return servers, nil
 }
+// ConnectDirect verifies an explicit server address. The Plex account token
+// works for a server owned or shared with that account; do not persist the
+// address until its music library has been verified.
+func (c *Client) ConnectDirect(ctx context.Context, address string) error {
+ u, err := url.Parse(strings.TrimSpace(address))
+ if err != nil || u.Hostname() == "" || !allowedRoot(address) {
+  return errors.New("use https URL or http://private-IP:32400")
+ }
+ root := strings.TrimRight(u.String(),"/")
+ token := c.State.Token
+ if token == "" {return errors.New("sign in to Plex first")}
+ var result container
+ if err:=c.Request(ctx,"GET",root,"/library/sections",token,nil,&result);err!=nil{
+  return fmt.Errorf("server connection failed: %w",err)
+ }
+ music := ""
+ for _,s:= range result.MediaContainer.Directory {
+  if s.Type=="artist" {music=s.Key;break}
+ }
+ if music=="" {return errors.New("server has no Plex music library")}
+ c.State.ServerURL=root
+ c.State.ServerToken=token
+ c.State.ServerName=u.Hostname()
+ c.State.LibraryID=music
+ return c.Save()
+}
+
+// Discover probes a bounded number of candidate endpoints, giving each its
+// own short deadline. Q2 can query its UI while this runs: discovery must not
+// block the Q2SPOT/1 request handler or exceed its 15-second deadline.
 func (c *Client) Discover(ctx context.Context) error {
-	servers, err := c.Servers(ctx)
-	if err != nil {
-		return err
-	}
-	for _, srv := range servers {
-		list := append([]Connection(nil), srv.Connections...)
-		sort.SliceStable(list, func(i, j int) bool {
-			score := func(x Connection) int {
-				if x.Relay {
-					return 3
-				}
-				if x.Local {
-					return 0
-				}
-				return 1
-			}
-			return score(list[i]) < score(list[j])
-		})
-		for _, conn := range list {
-			if conn.Relay || !allowedRoot(conn.URI) {
-				continue
-			}
-			var lib container
-			if err = c.Request(ctx, "GET", conn.URI, "/library/sections", srv.AccessToken, nil, &lib); err == nil {
-				c.State.ServerName = srv.Name
-				c.State.ServerURL = conn.URI
-				c.State.ServerToken = srv.AccessToken
-				if err = c.Save(); err != nil {
-					return err
-				}
-				return nil
-			}
-		}
-	}
-	return errors.New("no reachable Plex Media Server")
+ servers,err:=c.Servers(ctx)
+ if err!=nil {return fmt.Errorf("Plex discovery: %w",err)}
+ if len(servers)==0{return errors.New("Plex account has no accessible servers")}
+ var reason string
+ count:=0
+ for _,srv:=range servers{
+  if !strings.Contains(srv.Provides,"server"){continue}
+  connections:=append([]Connection(nil),srv.Connections...)
+  sort.SliceStable(connections,func(i,j int)bool{
+   score:=func(x Connection)int{
+    if x.Relay{return 4}
+    if x.Local && strings.HasPrefix(x.URI,"http://"){return 0}
+    if x.Local{return 1}
+    return 2
+   }
+   return score(connections[i])<score(connections[j])
+  })
+  token:=srv.AccessToken
+  if token==""{token=c.State.Token}
+  for _,conn:=range connections{
+   if conn.Relay||!allowedRoot(conn.URI){continue}
+   if count>=8{break}
+   count++
+   probeCtx,cancel:=context.WithTimeout(ctx,4*time.Second)
+   var sections container
+   probeErr:=c.Request(probeCtx,"GET",conn.URI,"/library/sections",token,nil,&sections)
+   cancel()
+   if probeErr!=nil{
+    // Do not print server URLs or credentials; keep the useful HTTP error.
+    reason=probeErr.Error()
+    continue
+   }
+   for _,s:=range sections.MediaContainer.Directory {
+    if s.Type!="artist" {continue}
+    c.State.ServerURL=conn.URI
+    c.State.ServerToken=token
+    c.State.ServerName=srv.Name
+    c.State.LibraryID=s.Key
+    return c.Save()
+   }
+   reason="connected server contains no music library"
+  }
+ }
+ if reason!="" {return fmt.Errorf("could not connect to Plex music: %s",reason)}
+ return errors.New("no usable Plex server address; try Manual Server")
 }
 func (c *Client) Libraries(ctx context.Context) ([]Section, error) {
 	var result container
