@@ -34,15 +34,22 @@ Automated builds passed previously, but real-device validation remains incomplet
 
 Improve browse hierarchy, music search, list pagination, artwork responsiveness, loading/error states and click-wheel ergonomics using Q2 Pod's existing card-app UI. Prefer native Q2 Pod visual conventions; avoid a custom player screen.
 
-## v0.9.0 — Performance and battery validation
+## v0.9.0 — Performance and battery validation (IN PROGRESS)
 
-Measure real Q2 memory/RSS, CPU, battery impact and streaming reliability; tune only observed bottlenecks in Plex API, relay, caching, downloads and sync. Firmware handles standby and hardware power management.
+- Added opt-in **Connection → Performance Diagnostics**, with 60-second process samples, bounded to 120 samples in RAM.
+- Sample Q2 Plex process CPU time/usage, Go heap, process peak RSS and goroutine count. Read battery percentage from the Q2 sysfs interface when available; this is *not* a battery-current/power sensor.
+- Write anonymized `.plex/diagnostics.csv` **only on explicit Export**, avoiding ongoing SD writes. Do not log filenames, listening history, Plex tokens or server addresses.
+- Physical device benchmarking still required before claiming better battery life. Run matched 30–60-minute trials for Q2 native local music, q2-plex Wi-Fi streaming and Plex downloads, with the screen brightness/audio volume/output held constant. Measure initial/final charge, CPU, RSS and any stutters. Q2 Pod retains power management and audio decoding.
+- Tune only bottlenecks observed from recorded measurements in Plex API, relay, caching, downloads and sync.
 
 ## v1.0.0 — Stable release
 
 Regression test sign-in, streaming, playlists, search, favorites, downloads, queue restore, firmware compatibility and upgrades. Publish documented install package with clear compatibility matrix and known limitations.
 
 ## Deferred / limitations
+
+- Phone-hotspot/Plexamp phone relay remains future work, outside the v0.9 performance milestone.
+
 
 - Exact-second resume cannot be promised unless Q2 Pod exposes a compatible seek-on-restore API.
 - Offline history backfill is not included yet.
