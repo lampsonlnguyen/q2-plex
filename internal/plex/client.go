@@ -64,6 +64,7 @@ type Item struct {
 	Type             string `json:"type"`
 	Title            string `json:"title"`
 	ParentTitle      string `json:"parentTitle"`
+	ParentRatingKey  string `json:"parentRatingKey"`
 	GrandparentTitle string `json:"grandparentTitle"`
 	Duration         int64  `json:"duration"`
 	LeafCount        int    `json:"leafCount"`
@@ -426,7 +427,10 @@ func (c *Client) Stream(ctx context.Context, id string, w http.ResponseWriter, r
 	if rangeHeader := r.Header.Get("Range"); rangeHeader != "" {
 		req.Header.Set("Range", rangeHeader)
 	}
-	resp, err := c.HTTP.Do(req)
+	// Audio streams can run for hours; the normal 9s metadata timeout must not
+	// terminate playback. Reuse the verified TLS transport, but no total timeout.
+	streamHTTP := &http.Client{Transport: c.HTTP.Transport, CheckRedirect: c.HTTP.CheckRedirect}
+	resp, err := streamHTTP.Do(req)
 	if err != nil {
 		return err
 	}
@@ -442,4 +446,39 @@ func (c *Client) Stream(ctx context.Context, id string, w http.ResponseWriter, r
 	w.WriteHeader(resp.StatusCode)
 	_, err = io.CopyBuffer(w, resp.Body, make([]byte, 32<<10))
 	return err
+}
+
+// AlbumTracks returns a bounded, ordered album track queue without loading an
+// entire music library into RAM. Entries are paged from Plex in 25-track blocks.
+// A response reaching maxItems is intentionally truncated to bound memory.
+func (c *Client) AlbumTracks(ctx context.Context, albumID string, maxItems int) ([]Item, error) {
+	if maxItems < 1 || maxItems > 250 {
+		return nil, errors.New("invalid queue limit")
+	}
+	if albumID == "" {
+		return nil, errors.New("missing album")
+	}
+	tracks := make([]Item, 0, min(maxItems, pageSize))
+	for offset := 0; offset < maxItems; {
+		page, more, err := c.Items(ctx, "album", albumID, offset)
+		if err != nil {
+			return nil, err
+		}
+		if len(page) == 0 {
+			break
+		}
+		for _, item := range page {
+			if item.Type == "track" && item.RatingKey != "" {
+				tracks = append(tracks, item)
+				if len(tracks) >= maxItems {
+					return tracks, nil
+				}
+			}
+		}
+		offset += len(page)
+		if !more {
+			break
+		}
+	}
+	return tracks, nil
 }

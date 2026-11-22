@@ -13,7 +13,6 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime/debug"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -23,7 +22,7 @@ import (
 	"github.com/lampsonlnguyen/q2-plex/internal/q2spot"
 )
 
-const version = "0.1.0"
+const version = "0.2.0"
 const relayAddr = "127.0.0.1:2328"
 
 type app struct {
@@ -32,6 +31,7 @@ type app struct {
 	pin       plex.Pin
 	busy      bool
 	lastError string
+	queue playbackQueue
 }
 
 func main() {
@@ -209,7 +209,7 @@ func (a *app) root() q2spot.Reply {
 	}
 	rows := []q2spot.Row{}
 	if server != "" && lib != "" {
-		rows = append(rows, list("albums", "Albums", server, ""), list("artists", "Artists", server, ""), list("libraries", "Music Libraries", "Choose library", ""))
+		rows = append(rows, list("albums", "Albums", server, ""), list("artists", "Artists", server, ""), list("libraries", "Music Libraries", "Choose library", ""), list("queue", "Play Queue", "Current album", ""))
 	} else if !busy {
 		rows = append(rows, act("reconnect", "Connect to Plex", ""))
 	}
@@ -309,6 +309,9 @@ func (a *app) handle(req q2spot.Request) q2spot.Reply {
 			return q2spot.Fail("error", "Could not browse music")
 		}
 		r := q2spot.Reply{}
+		if req.Op == "album" && off == 0 {
+			r.Rows = append(r.Rows, act("playalbum", "Play Album", id))
+		}
 		for _, it := range items {
 			switch it.Type {
 			case "artist":
@@ -316,7 +319,11 @@ func (a *app) handle(req q2spot.Request) q2spot.Reply {
 			case "album":
 				r.Rows = append(r.Rows, list("album", it.Title, it.ParentTitle, it.RatingKey))
 			case "track":
-				r.Rows = append(r.Rows, act("play", it.Title, it.RatingKey))
+				ctx := it.RatingKey
+				if req.Op == "album" {
+					ctx = id + ":" + it.RatingKey
+				}
+				r.Rows = append(r.Rows, act("play", it.Title, ctx))
 			}
 		}
 		if len(r.Rows) == 0 {
@@ -326,15 +333,26 @@ func (a *app) handle(req q2spot.Request) q2spot.Reply {
 			r.Cursor = strconv.Itoa(off + len(items))
 		}
 		return r
+	case "playalbum":
+		if len(req.Args) < 1 { return q2spot.Fail("bad", "Missing album") }
+		return a.playAlbum(ctx, req.Args[0], "")
+	case "queue":
+		return a.queuePage()
+	case "playqueue":
+		if len(req.Args) < 1 { return q2spot.Fail("bad", "Missing queued track") }
+		return a.playQueueIndex(req.Args[0])
 	case "play":
 		if len(req.Args) < 1 {
 			return q2spot.Fail("bad", "Missing track")
+		}
+		if album, song, ok := strings.Cut(req.Args[0], ":"); ok && album != "" && song != "" {
+			return a.playAlbum(ctx, album, song)
 		}
 		it, err := a.client.Track(ctx, req.Args[0])
 		if err != nil {
 			return q2spot.Fail("error", "Track unavailable")
 		}
-		if err = a.startTrack(it); err != nil {
+		if err = a.startQueue([]plex.Item{it}, 0); err != nil {
 			return q2spot.Fail("error", "Could not start music")
 		}
 		return q2spot.Reply{Message: "Playing " + it.Title}
@@ -360,20 +378,6 @@ func atomic(path string, b []byte) error {
 	}
 	return os.Rename(temp, path)
 }
-func (a *app) startTrack(it plex.Item) error {
-	if it.RatingKey == "" {
-		return errors.New("missing track key")
-	}
-	// A single-song Q2URLS/1 queue. Album queues and offline downloads are next milestones.
-	url := "http://" + relayAddr + "/song/" + it.RatingKey
-	seconds := it.Duration / 1000
-	q := "#Q2URLS/1\tstart=0\n" + field(url) + "\t" + field(it.Title) + "\t" + field(it.GrandparentTitle) + "\t" + field(it.ParentTitle) + "\t\t" + strconv.FormatInt(seconds, 10) + "\n"
-	path := "/tmp/q2-plex.urls"
-	if err := atomic(path, []byte(q)); err != nil {
-		return err
-	}
-	return atomic("/tmp/q2-plex.play", []byte(strconv.FormatInt(time.Now().UnixNano(), 10)+" "+path))
-}
 func (a *app) relay(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "GET" && r.Method != "HEAD" {
 		http.Error(w, "method not allowed", 405)
@@ -388,9 +392,8 @@ func (a *app) relay(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
-	defer cancel()
-	if err := a.client.Stream(ctx, id, w, r); err != nil {
+	// Do not truncate long FLAC playback using an arbitrary elapsed-time limit.
+	if err := a.client.Stream(r.Context(), id, w, r); err != nil {
 		log.Printf("stream %s: %v", id, err)
 	}
 }
