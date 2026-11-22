@@ -470,7 +470,7 @@ func (a *app) handle(req q2spot.Request) q2spot.Reply {
 		}
 		return a.playAlbum(ctx, req.Args[0], "")
 	case "queue":
-		return a.queuePage()
+		return a.queuePage(req.Args)
 	case "playqueue":
 		if len(req.Args) < 1 {
 			return q2spot.Fail("bad", "Missing queued track")
