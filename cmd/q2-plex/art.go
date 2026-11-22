@@ -111,14 +111,18 @@ func (a *artworkCache) decorate(client *plex.Client, r q2spot.Reply, requests []
 		}
 		// Expired failed-art entries otherwise grow without bound after browsing
 		// hundreds of albums on a long-running Q2.
-		if len(a.failed)>128{
-			now:=time.Now()
-			for k,until:=range a.failed{
-				if !now.Before(until){delete(a.failed,k)}
+		if len(a.failed) > 128 {
+			now := time.Now()
+			for k, until := range a.failed {
+				if !now.Before(until) {
+					delete(a.failed, k)
+				}
 			}
-			if len(a.failed)>128{a.failed=map[string]time.Time{}}
+			if len(a.failed) > 128 {
+				a.failed = map[string]time.Time{}
+			}
 		}
-		job := artFetch{key:key,thumb:req.source,client:client}
+		job := artFetch{key: key, thumb: req.source, client: client}
 		select {
 		case a.jobs <- job:
 			a.pending[key] = true
@@ -160,11 +164,13 @@ func (a *artworkCache) prune() {
 		return
 	}
 	sort.Slice(assets, func(i, j int) bool { return assets[i].at.Before(assets[j].at) })
-	remaining:=len(assets)
-	for _,it:=range assets{
-		if remaining<=artEntries && total<=artBudgetBytes{break}
-		if os.Remove(it.path)==nil{
-			total-=it.size
+	remaining := len(assets)
+	for _, it := range assets {
+		if remaining <= artEntries && total <= artBudgetBytes {
+			break
+		}
+		if os.Remove(it.path) == nil {
+			total -= it.size
 			remaining--
 		}
 	}

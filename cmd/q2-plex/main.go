@@ -133,53 +133,59 @@ func (a *app) launchConnection(manual string) {
 	a.lastError = ""
 	a.connection.started = true
 	a.mu.Unlock()
-	ctx:=a.ctx
-	if ctx==nil{ctx=context.Background()}
-	go a.connectNow(ctx,manual)
+	ctx := a.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	go a.connectNow(ctx, manual)
 }
 func (a *app) connect(ctx context.Context) {
 	a.launchConnection("")
 }
 func (a *app) connectNow(ctx context.Context, manual string) {
 	var result error
-	defer func(){
+	defer func() {
 		a.mu.Lock()
-		a.busy=false
-		a.connection.record(time.Now(),result)
-		if result!=nil {
-			a.lastError=result.Error()
-			log.Printf("Plex connection: %v",result)
-		}else{
-			a.lastError=""
+		a.busy = false
+		a.connection.record(time.Now(), result)
+		if result != nil {
+			a.lastError = result.Error()
+			log.Printf("Plex connection: %v", result)
+		} else {
+			a.lastError = ""
 		}
 		a.mu.Unlock()
 	}()
 	// Prefer a verified, previously selected server. This saves a cloud request
 	// on every reboot and also works on LAN when plex.tv is unreachable.
-	if manual=="" {
-		probeCtx,stop:=context.WithTimeout(ctx,7*time.Second)
-		result=a.client.ProbeSavedServer(probeCtx)
+	if manual == "" {
+		probeCtx, stop := context.WithTimeout(ctx, 7*time.Second)
+		result = a.client.ProbeSavedServer(probeCtx)
 		stop()
-		if result==nil{return}
-	}
-	if time.Since(time.Unix(a.client.State.TokenTime,0))>5*24*time.Hour {
-		refreshCtx,stop:=context.WithTimeout(ctx,12*time.Second)
-		result=a.client.Refresh(refreshCtx)
-		stop()
-		if result!=nil {
-			result=fmt.Errorf("Plex session refresh: %w",result)
+		if result == nil {
 			return
 		}
 	}
-	connectCtx,stop:=context.WithTimeout(ctx,35*time.Second)
-	if manual!=""{
-		result=a.client.ConnectDirect(connectCtx,manual)
-	}else{
-		result=a.client.Discover(connectCtx)
+	if time.Since(time.Unix(a.client.State.TokenTime, 0)) > 5*24*time.Hour {
+		refreshCtx, stop := context.WithTimeout(ctx, 12*time.Second)
+		result = a.client.Refresh(refreshCtx)
+		stop()
+		if result != nil {
+			result = fmt.Errorf("Plex session refresh: %w", result)
+			return
+		}
+	}
+	connectCtx, stop := context.WithTimeout(ctx, 35*time.Second)
+	if manual != "" {
+		result = a.client.ConnectDirect(connectCtx, manual)
+	} else {
+		result = a.client.Discover(connectCtx)
 	}
 	stop()
-	if result!=nil{return}
-	log.Printf("Plex music connected: %s",a.client.State.ServerName)
+	if result != nil {
+		return
+	}
+	log.Printf("Plex music connected: %s", a.client.State.ServerName)
 }
 func (a *app) beginLogin() {
 	a.mu.Lock()
@@ -240,55 +246,65 @@ func list(op, title, sub, id string) q2spot.Row {
 }
 func (a *app) root() q2spot.Reply {
 	a.mu.Lock()
-	pin,busy,msg:=a.pin,a.busy,a.lastError
-	signed:=a.client.State.Token!=""
-	server,lib:=a.client.State.ServerName,a.client.State.LibraryID
-	online:=a.connection.online
+	pin, busy, msg := a.pin, a.busy, a.lastError
+	signed := a.client.State.Token != ""
+	server, lib := a.client.State.ServerName, a.client.State.LibraryID
+	online := a.connection.online
 	a.mu.Unlock()
-	if pin.Code!=""{
-		return q2spot.Reply{Message:"refresh",Rows:[]q2spot.Row{
+	if pin.Code != "" {
+		return q2spot.Reply{Message: "refresh", Rows: []q2spot.Row{
 			text("Visit plex.tv/link on your phone"),
-			text("Code: "+pin.Code),
+			text("Code: " + pin.Code),
 			text("Waiting for approval..."),
-			act("login","New Login Code",""),
+			act("login", "New Login Code", ""),
 		}}
 	}
-	if !signed{
-		rows:=[]q2spot.Row{
-			list("offline","Offline Music","Saved on microSD",""),
-			list("lastqueue","Last Queue","Previous music",""),
-			act("login","Sign In to Plex",""),
+	if !signed {
+		rows := []q2spot.Row{
+			list("offline", "Offline Music", "Saved on microSD", ""),
+			list("lastqueue", "Last Queue", "Previous music", ""),
+			act("login", "Sign In to Plex", ""),
 		}
-		if busy{rows=append(rows,text("Connecting..."))}
-		if msg!=""{rows=append(rows,text("Error: "+msg))}
-		r:=q2spot.Reply{Rows:rows}
-		if busy{r.Message="refresh"}
+		if busy {
+			rows = append(rows, text("Connecting..."))
+		}
+		if msg != "" {
+			rows = append(rows, text("Error: "+msg))
+		}
+		r := q2spot.Reply{Rows: rows}
+		if busy {
+			r.Message = "refresh"
+		}
 		return r
 	}
 	// Streaming stays the default: browse live music first, downloads last.
-	rows:=[]q2spot.Row{}
-	if server!=""&&lib!=""{
-		rows=append(rows,
-			list("albums","Albums","",""),
-			list("artists","Artists","",""),
-			list("playlists","Playlists","",""),
-			list("searchpage","Search Music","",""),
-			list("favorites","Favorites","",""),
-			list("queue","Up Next","",""),
+	rows := []q2spot.Row{}
+	if server != "" && lib != "" {
+		rows = append(rows,
+			list("albums", "Albums", "", ""),
+			list("artists", "Artists", "", ""),
+			list("playlists", "Playlists", "", ""),
+			list("searchpage", "Search Music", "", ""),
+			list("favorites", "Favorites", "", ""),
+			list("queue", "Up Next", "", ""),
 		)
 	}
-	rows=append(rows,
-		list("offline","Offline Music","On microSD",""),
-		list("downloadstatus","Downloads","",""),
-		list("lastqueue","Last Queue","Restore music",""),
-		list("connection","Connection",connectionLabel(server,online,busy),""),
+	rows = append(rows,
+		list("offline", "Offline Music", "On microSD", ""),
+		list("downloadstatus", "Downloads", "", ""),
+		list("lastqueue", "Last Queue", "Restore music", ""),
+		list("connection", "Connection", connectionLabel(server, online, busy), ""),
 	)
-	if busy{rows=append(rows,text("Connecting to Plex..."))}
-	if !online&&!busy&&msg!=""{
-		rows=append(rows,text("Plex unavailable; retry is automatic"))
+	if busy {
+		rows = append(rows, text("Connecting to Plex..."))
 	}
-	r:=q2spot.Reply{Rows:rows}
-	if busy{r.Message="refresh"}
+	if !online && !busy && msg != "" {
+		rows = append(rows, text("Plex unavailable; retry is automatic"))
+	}
+	r := q2spot.Reply{Rows: rows}
+	if busy {
+		r.Message = "refresh"
+	}
 	return r
 }
 func (a *app) handle(req q2spot.Request) q2spot.Reply {
@@ -379,7 +395,7 @@ func (a *app) handle(req q2spot.Request) q2spot.Reply {
 		libs, err := a.client.Libraries(ctx)
 		if err != nil {
 			a.notePlexFailure(err)
-			return q2spot.Fail("error","Could not load libraries")
+			return q2spot.Fail("error", "Could not load libraries")
 		}
 		var rows []q2spot.Row
 		for _, lib := range libs {
@@ -419,9 +435,9 @@ func (a *app) handle(req q2spot.Request) q2spot.Reply {
 			return q2spot.Fail("bad", "Invalid page")
 		}
 		items, more, err := a.client.Items(ctx, req.Op, id, off)
-		if err!=nil{
+		if err != nil {
 			a.notePlexFailure(err)
-			return q2spot.Fail("error","Could not browse music")
+			return q2spot.Fail("error", "Could not browse music")
 		}
 
 		r := q2spot.Reply{}
@@ -475,9 +491,9 @@ func (a *app) handle(req q2spot.Request) q2spot.Reply {
 			return a.playAlbum(ctx, album, song)
 		}
 		it, err := a.client.Track(ctx, req.Args[0])
-		if err!=nil{
+		if err != nil {
 			a.notePlexFailure(err)
-			return q2spot.Fail("error","Track unavailable")
+			return q2spot.Fail("error", "Track unavailable")
 		}
 		if err = a.startQueue([]plex.Item{it}, 0); err != nil {
 			return q2spot.Fail("error", "Could not start music")
