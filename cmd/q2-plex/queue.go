@@ -57,7 +57,7 @@ func buildURLsWithLocal(tracks []plex.Item, start int, local map[string]string) 
 		if local != nil {
 			if path, ok := local[it.RatingKey]; ok {
 				if !filepath.IsAbs(path) || !offline.ValidFile(filepath.Base(path)) ||
-					!strings.Contains(filepath.ToSlash(path), "/offline/music/") {
+					filepath.Clean(path) != path || !strings.Contains(filepath.ToSlash(path), "/PlexMusic/music/") {
 					return nil, errors.New("invalid local music path")
 				}
 				uri = path
