@@ -14,7 +14,7 @@ func TestQueueStartFromTrack(t *testing.T){
  data,err:=buildURLs(tracks,1);if err!=nil{t.Fatal(err)}
  s:=string(data)
  if !strings.HasPrefix(s,"#Q2URLS/1\tstart=1\n"){t.Fatalf("start %s",s)}
- if !strings.Contains(s,"http://127.0.0.1:2328/song/456\tTwo\tArtist\tAlbum\t\t92\n"){t.Fatal(s)}
+ if !strings.Contains(s,"http://127.0.0.1:2328/song/456\tTwo\tArtist\tAlbum\thttp://127.0.0.1:2328/cover/456\t92\n"){t.Fatal(s)}
  if strings.Contains(s,"X-Plex-Token"){t.Fatal("token leaked")}
 }
 func TestQueueRejectsBadTrack(t *testing.T){
