@@ -226,7 +226,7 @@ func (a *app) root() q2spot.Reply {
 	return r
 }
 func (a *app) handle(req q2spot.Request) q2spot.Reply {
-	if req.Op == "" || req.Op == "root" {
+	if req.Op == "" || req.Op == "root" || req.Op == "menu" {
 		return a.root()
 	}
 	switch req.Op {
