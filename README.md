@@ -27,7 +27,7 @@ Requires Go 1.22+, Python 3, curl, and an internet connection for the CA bundle.
 ./contrib/shanlingq2/build.sh
 ```
 
-Unzip `dist/q2-plex-v0.3.0.zip` into the **root** of the Q2's microSD card, preserving the hidden `.plex` folder. In Q2 Pod select **Streaming → Plex Music**.
+Unzip `dist/q2-plex-v0.3.0.zip` into the **root** of the Q2's microSD card, preserving the hidden `.plex` folder. After replacing an existing version, restart the Q2 so the old executable is not still running. In Q2 Pod select **Streaming → Plex Music**.
 
 1. Select **Sign In with Plex**.
 2. On your phone open https://plex.tv/link and enter the code shown on the Q2.
