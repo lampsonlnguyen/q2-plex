@@ -146,23 +146,40 @@ func (a *app) playAlbum(ctx context.Context, albumID, selected string) q2spot.Re
 	}
 	return q2spot.Reply{Message: "Playing " + cleanField(tracks[start].Title)}
 }
-func (a *app) queuePage() q2spot.Reply {
+// queuePage exposes the complete native-player queue through Q2SPOT/1
+// cursors. Q2 Pod renders each page and owns playback, skip, and seek.
+func (a *app) queuePage(args []string) q2spot.Reply {
+	offset := 0
+	if len(args) > 1 {
+		return q2spot.Fail("bad", "Invalid queue page")
+	}
+	if len(args) == 1 {
+		n, err := strconv.Atoi(args[0])
+		if err != nil || n < 0 || n > queueLimit {
+			return q2spot.Fail("bad", "Invalid queue page")
+		}
+		offset = n
+	}
 	a.mu.Lock()
 	q := a.queue
 	a.mu.Unlock()
 	if len(q.Tracks) == 0 {
 		return q2spot.Reply{Rows: []q2spot.Row{{Kind: "info", Title: "No active queue"}}}
 	}
-	rows := make([]q2spot.Row, 0, min(len(q.Tracks), 40))
-	// A bounded first window avoids asking the firmware to store hundreds of rows.
-	for i := 0; i < len(q.Tracks) && i < 40; i++ {
+	if offset >= len(q.Tracks) {
+		return q2spot.Fail("bad", "Queue page out of range")
+	}
+	end := min(offset+40, len(q.Tracks))
+	rows := make([]q2spot.Row, 0, end-offset)
+	for i := offset; i < end; i++ {
 		item := q.Tracks[i]
 		rows = append(rows, q2spot.Row{Kind: "action", URI: "playqueue", Title: item.Title, Subtitle: item.GrandparentTitle, Context: strconv.Itoa(i)})
 	}
-	if len(q.Tracks) > 40 {
-		rows = append(rows, q2spot.Row{Kind: "info", Title: "Use album view for remaining tracks"})
+	reply := q2spot.Reply{Rows: rows}
+	if end < len(q.Tracks) {
+		reply.Cursor = strconv.Itoa(end)
 	}
-	return q2spot.Reply{Rows: rows}
+	return reply
 }
 func (a *app) playQueueIndex(raw string) q2spot.Reply {
 	i, err := strconv.Atoi(raw)
