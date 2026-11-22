@@ -53,8 +53,10 @@ func batteryCapacity(root string) int {
 	entries,err:=os.ReadDir(root)
 	if err!=nil{return -1}
 	for _,entry:=range entries{
-		if !entry.IsDir(){continue}
 		base:=filepath.Join(root,entry.Name())
+		// sysfs class entries are often symlinks to actual power supplies.
+		info,err:=os.Stat(base)
+		if err!=nil||!info.IsDir(){continue}
 		kind,err:=os.ReadFile(filepath.Join(base,"type"))
 		if err!=nil||!strings.EqualFold(strings.TrimSpace(string(kind)),"Battery"){continue}
 		data,err:=os.ReadFile(filepath.Join(base,"capacity"))
