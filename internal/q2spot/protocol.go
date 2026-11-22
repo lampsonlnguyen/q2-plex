@@ -50,11 +50,11 @@ func unesc(s string) (string, error) {
 			n *= 16
 			switch {
 			case ch >= '0' && ch <= '9':
-				n += ch - '0'
+				n += byte(ch - '0')
 			case ch >= 'a' && ch <= 'f':
-				n += ch - 'a' + 10
+				n += byte(ch - 'a' + 10)
 			case ch >= 'A' && ch <= 'F':
-				n += ch - 'A' + 10
+				n += byte(ch - 'A' + 10)
 			default:
 				return "", errors.New("invalid escape")
 			}
