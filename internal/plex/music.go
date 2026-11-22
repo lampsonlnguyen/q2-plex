@@ -22,11 +22,11 @@ func (c *Client) Playlists(ctx context.Context, offset int) ([]Item, bool, error
  var result container
  if err:=c.Request(ctx,"GET",c.State.ServerURL,path,c.State.ServerToken,nil,&result);err!=nil{return nil,false,err}
  all:=result.MediaContainer.Metadata
- // Some PMS versions do not honor playlistType; filter client-side too.
+ // Advance in raw Plex pages, not the filtered count, to avoid duplicate items.
+ more:=len(all)>pageSize
+ if more {all=all[:pageSize]}
  playlists:=make([]Item,0,len(all))
  for _,it:=range all {if it.Type=="playlist" && (it.PlaylistType==""||it.PlaylistType=="audio"){playlists=append(playlists,it)}}
- more:=len(all)>pageSize
- if len(all)>pageSize && len(playlists)>pageSize {playlists=playlists[:pageSize]}
  return playlists,more,nil
 }
 
