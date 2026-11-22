@@ -42,15 +42,13 @@ Improve browse hierarchy, music search, list pagination, artwork responsiveness,
 - Physical device benchmarking still required before claiming better battery life. Run matched 30–60-minute trials for Q2 native local music, q2-plex Wi-Fi streaming and Plex downloads, with the screen brightness/audio volume/output held constant. Measure initial/final charge, CPU, RSS and any stutters. Q2 Pod retains power management and audio decoding.
 - Tune only bottlenecks observed from recorded measurements in Plex API, relay, caching, downloads and sync.
 
-## v1.0.0 — Stable release
+## v1.0.0 — First public release
 
-Regression test sign-in, streaming, playlists, search, favorites, downloads, queue restore, firmware compatibility and upgrades. Publish documented install package with clear compatibility matrix and known limitations.
+Publish a versioned GitHub release containing the installable MIPS package, Plexamp-style icon, checksum and documented installation and known limitations. CI checks verify unit tests and package structure. Physical-Q2 sign-in, full-album streaming, play/pause/seek, favorites, Wi-Fi dropouts, downloads, and battery tests remain a tracked validation task; successful compilation alone is not proof of all features. See [v1.0.0 release notes](docs/RELEASE-v1.0.0.md).
 
 ## Deferred / limitations
 
-- Phone-hotspot/Plexamp phone relay remains future work, outside the v0.9 performance milestone.
-
-
+- Phone-hotspot/Plexamp phone relay remains future work, outside the v1.0 release scope.
 - Exact-second resume cannot be promised unless Q2 Pod exposes a compatible seek-on-restore API.
 - Offline history backfill is not included yet.
 - Starting a Streaming app with Wi-Fi disabled may remain subject to firmware launch behavior. Native Folder view can still open downloaded audio.
