@@ -115,7 +115,7 @@ func (a *app) extra(ctx context.Context, req q2spot.Request) (q2spot.Reply, bool
 		if offset == 0 {
 			if req.Op == "playlist" {
 				reply.Rows = append(reply.Rows, act("playplaylist", "Play Playlist", id))
-				reply.Rows = append(reply.Rows,act("downloadplaylist","Download Playlist to SD",id))
+				reply.Rows = append(reply.Rows, act("downloadplaylist", "Download Playlist to SD", id))
 			}
 			if req.Op == "playlist" || req.Op == "favorites" {
 				reply.Rows = append(reply.Rows, text("Hold Play/Pause on a song to toggle Favorite"))

@@ -19,8 +19,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/lampsonlnguyen/q2-plex/internal/offline"
 	"github.com/lampsonlnguyen/q2-plex/internal/plex"
- "github.com/lampsonlnguyen/q2-plex/internal/offline"
 	"github.com/lampsonlnguyen/q2-plex/internal/q2spot"
 )
 
@@ -36,9 +36,9 @@ type app struct {
 	manualAddress string
 	queue         playbackQueue
 	art           *artworkCache
- offline *offline.Store
- download downloadJob
- ctx context.Context
+	offline       *offline.Store
+	download      downloadJob
+	ctx           context.Context
 }
 
 func main() {
@@ -55,12 +55,14 @@ func main() {
 	if artErr != nil {
 		log.Printf("art disabled: %v", artErr)
 	}
-	stored,storeErr:=offline.Load(filepath.Join(filepath.Dir(*dir),"PlexMusic"))
-	if storeErr!=nil {log.Printf("offline library unavailable: %v",storeErr)}
+	stored, storeErr := offline.Load(filepath.Join(filepath.Dir(*dir), "PlexMusic"))
+	if storeErr != nil {
+		log.Printf("offline library unavailable: %v", storeErr)
+	}
 	_ = os.Remove("/tmp/q2-plex.state")
-	a := &app{client:cl,art:art,offline:stored}
+	a := &app{client: cl, art: art, offline: stored}
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
- a.ctx=ctx
+	a.ctx = ctx
 	defer cancel()
 	go a.initialize(ctx)
 	server := &http.Server{Addr: relayAddr, Handler: http.HandlerFunc(a.relay), ReadHeaderTimeout: 5 * time.Second}
@@ -225,7 +227,7 @@ func (a *app) root() q2spot.Reply {
 		}}
 	}
 	if !signed {
-		rows := []q2spot.Row{list("offline","Offline Music","Saved on SD card",""),act("login","Sign In with Plex","")}
+		rows := []q2spot.Row{list("offline", "Offline Music", "Saved on SD card", ""), act("login", "Sign In with Plex", "")}
 		if busy {
 			rows = append(rows, text("Getting login code..."))
 		}
@@ -239,7 +241,7 @@ func (a *app) root() q2spot.Reply {
 			return ""
 		}(), Rows: rows}
 	}
-	rows := []q2spot.Row{list("offline","Offline Music","Play without Wi-Fi",""),list("downloadstatus","Downloads","Save music to microSD","")}
+	rows := []q2spot.Row{list("offline", "Offline Music", "Play without Wi-Fi", ""), list("downloadstatus", "Downloads", "Save music to microSD", "")}
 	if server != "" && lib != "" {
 		rows = append(rows, list("albums", "Albums", server, ""), list("artists", "Artists", server, ""), list("playlists", "Playlists", "Audio only", ""), list("favorites", "Favorites", "Five-star songs", ""), list("searchpage", "Search Music", "", ""), list("libraries", "Music Libraries", "Choose library", ""), list("queue", "Play Queue", "Current album", ""))
 	} else if !busy {
@@ -318,7 +320,9 @@ func (a *app) handle(req q2spot.Request) q2spot.Reply {
 		}
 		return a.root()
 	}
-	if reply,handled:=a.handleOffline(req);handled{return reply}
+	if reply, handled := a.handleOffline(req); handled {
+		return reply
+	}
 	a.mu.Lock()
 	ready := a.client.State.Token != "" && a.client.State.ServerURL != ""
 	a.mu.Unlock()
@@ -382,7 +386,7 @@ func (a *app) handle(req q2spot.Request) q2spot.Reply {
 		art := make([]artworkJob, 0, len(items))
 		if req.Op == "album" && off == 0 {
 			r.Rows = append(r.Rows, act("playalbum", "Play Album", id))
-			r.Rows = append(r.Rows,act("downloadalbum","Download Album to SD",id))
+			r.Rows = append(r.Rows, act("downloadalbum", "Download Album to SD", id))
 			r.Rows = append(r.Rows, text("Hold Play/Pause on a song to toggle Favorite"))
 		}
 		for _, it := range items {

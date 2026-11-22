@@ -78,7 +78,7 @@ type Item struct {
 		Part []struct {
 			Key       string `json:"key"`
 			Container string `json:"container"`
- Size int64 `json:"size"`
+			Size      int64  `json:"size"`
 		} `json:"Part"`
 	} `json:"Media"`
 }
