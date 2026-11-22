@@ -50,7 +50,7 @@ func cpuSeconds() (float64, int64, error) {
 	// Linux maximum resident set size is reported in KiB.
 	user := float64(usage.Utime.Sec) + float64(usage.Utime.Usec)/1e6
 	system := float64(usage.Stime.Sec) + float64(usage.Stime.Usec)/1e6
-	return user + system, usage.Maxrss, nil
+	return user + system, int64(usage.Maxrss), nil
 }
 func batteryCapacity(root string) int {
 	entries, err := os.ReadDir(root)
