@@ -12,7 +12,7 @@ cp contrib/shanlingq2/launcher.sh "$STAGE/run"
 chmod 755 "$STAGE/run" "$STAGE/q2-plex"
 # Q2 has no system root CA bundle: ship Mozilla roots for VERIFIED TLS.
 # Never silently skip cert verification.
-if [ -n "$(printf '%s' "$Q2_PLEX_CA_FILE")" ] 2>/dev/null && [ -r "$Q2_PLEX_CA_FILE" ]; then
+if [ -n "${Q2_PLEX_CA_FILE:-}" ] && [ -r "$Q2_PLEX_CA_FILE" ]; then
   cp "$Q2_PLEX_CA_FILE" "$STAGE/cacert.pem"
 else
   curl -fsSL --max-time 30 https://curl.se/ca/cacert.pem -o "$STAGE/cacert.pem"
