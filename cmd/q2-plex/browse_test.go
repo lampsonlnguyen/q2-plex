@@ -27,7 +27,7 @@ func TestQueueIncludesCoverWithoutToken(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(out), "/cover/11\t120\n") {
+	if !strings.Contains(string(out), "/cover/11\t120\t11\t0\n") {
 		t.Fatalf("%s", out)
 	}
 	if strings.Contains(string(out), "token") {
