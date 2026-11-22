@@ -162,7 +162,7 @@ func (c *Client) Save() error {
 func (c *Client) headers(req *http.Request, token string) {
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-Plex-Product", Product)
-	req.Header.Set("X-Plex-Version", "0.3.1")
+	req.Header.Set("X-Plex-Version", "0.6.0")
 	req.Header.Set("X-Plex-Platform", "Linux")
 	req.Header.Set("X-Plex-Device", "Shanling Q2")
 	req.Header.Set("X-Plex-Client-Identifier", c.State.ClientID)
@@ -170,39 +170,49 @@ func (c *Client) headers(req *http.Request, token string) {
 		req.Header.Set("X-Plex-Token", token)
 	}
 }
+// Request retries only transient, idempotent GET failures. Never replay POST
+// login/timeline operations or PUT ratings, which can have server-side effects.
 func (c *Client) Request(ctx context.Context, method, root, path, token string, body io.Reader, out any) error {
 	u, err := url.Parse(root)
-	if err != nil {
-		return err
-	}
+	if err != nil { return err }
 	rel, err := url.Parse(path)
-	if err != nil {
-		return err
-	}
+	if err != nil { return err }
+	if !allowedRoot(root) { return errors.New("insecure server address refused") }
 	target := u.ResolveReference(rel)
-	if !allowedRoot(root) {
-		return errors.New("insecure server address refused")
-	}
 	req, err := http.NewRequestWithContext(ctx, method, target.String(), body)
-	if err != nil {
-		return err
-	}
+	if err != nil { return err }
 	c.headers(req, token)
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
+	if body != nil { req.Header.Set("Content-Type", "application/json") }
+	attempts := 1
+	if method == http.MethodGet && body == nil { attempts = 2 }
+	for attempt:=0;attempt<attempts;attempt++{
+		if err:=ctx.Err();err!=nil{return err}
+		resp,doErr:=c.HTTP.Do(req.Clone(ctx))
+		if doErr!=nil{
+			if attempt+1<attempts && Retryable(doErr){
+				if err:=waitRetry(ctx,250*time.Millisecond);err!=nil{return err}
+				continue
+			}
+			return doErr
+		}
+		if resp.StatusCode/100!=2{
+			statusErr:=&HTTPStatusError{Code:resp.StatusCode}
+			_ = resp.Body.Close()
+			if attempt+1<attempts && Retryable(statusErr){
+				if err:=waitRetry(ctx,250*time.Millisecond);err!=nil{return err}
+				continue
+			}
+			return statusErr
+		}
+		if out==nil{
+			_ = resp.Body.Close()
+			return nil
+		}
+		decodeErr:=json.NewDecoder(io.LimitReader(resp.Body,2<<20)).Decode(out)
+		_ = resp.Body.Close()
+		return decodeErr
 	}
-	resp, err := c.HTTP.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode/100 != 2 {
-		return fmt.Errorf("plex HTTP %d", resp.StatusCode)
-	}
-	if out == nil {
-		return nil
-	}
-	return json.NewDecoder(io.LimitReader(resp.Body, 2<<20)).Decode(out)
+	return errors.New("request exhausted retries")
 }
 func allowedRoot(raw string) bool {
 	u, err := url.Parse(raw)
@@ -312,6 +322,24 @@ func (c *Client) Servers(ctx context.Context) ([]Resource, error) {
 		}
 	}
 	return servers, nil
+}
+
+// ProbeSavedServer reuses a reachable server before contacting Plex cloud.
+// It must not silently switch libraries while the player is running.
+func (c *Client) ProbeSavedServer(ctx context.Context) error {
+	if c.State.ServerURL==""||c.State.ServerToken==""||!allowedRoot(c.State.ServerURL) {
+		return errors.New("no saved Plex server")
+	}
+	libraries,err:=c.Libraries(ctx)
+	if err!=nil{return err}
+	if len(libraries)==0{return errors.New("saved server has no music libraries")}
+	found:=false
+	for _,lib:=range libraries{if lib.Key==c.State.LibraryID{found=true;break}}
+	if !found{
+		c.State.LibraryID=libraries[0].Key
+		if err=c.Save();err!=nil{return err}
+	}
+	return nil
 }
 
 // ConnectDirect verifies an explicit server address. The Plex account token
@@ -520,7 +548,7 @@ func (c *Client) Stream(ctx context.Context, id string, w http.ResponseWriter, r
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
-		return fmt.Errorf("media HTTP %d", resp.StatusCode)
+		return &HTTPStatusError{Code:resp.StatusCode}
 	}
 	for _, k := range []string{"Content-Type", "Content-Length", "Content-Range", "Accept-Ranges"} {
 		if v := resp.Header.Get(k); v != "" {

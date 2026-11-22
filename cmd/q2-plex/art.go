@@ -44,11 +44,10 @@ func newArtworkCache(dir string) (*artworkCache, error) {
 	caps, _ := os.ReadFile("/tmp/q2-addon.caps")
 	// Old firmware has no art extension. Avoid unnecessary network requests.
 	enabled := strings.Contains(" "+string(caps)+" ", " art ")
-	a := &artworkCache{dir: dir, enabled: enabled, pending: map[string]bool{}, failed: map[string]time.Time{}, jobs: make(chan artFetch, 32)}
+	a := &artworkCache{dir: dir, enabled: enabled, pending: map[string]bool{}, failed: map[string]time.Time{}, jobs: make(chan artFetch, 16)}
 	if enabled {
-		for i := 0; i < 2; i++ {
-			go a.worker()
-		}
+		// A single worker avoids concurrent image transcodes and radio wakeups.
+		go a.worker()
 	}
 	return a, nil
 }
@@ -110,7 +109,16 @@ func (a *artworkCache) decorate(client *plex.Client, r q2spot.Reply, requests []
 			a.mu.Unlock()
 			continue
 		}
-		job := artFetch{key: key, thumb: req.source, client: client}
+		// Expired failed-art entries otherwise grow without bound after browsing
+		// hundreds of albums on a long-running Q2.
+		if len(a.failed)>128{
+			now:=time.Now()
+			for k,until:=range a.failed{
+				if !now.Before(until){delete(a.failed,k)}
+			}
+			if len(a.failed)>128{a.failed=map[string]time.Time{}}
+		}
+		job := artFetch{key:key,thumb:req.source,client:client}
 		select {
 		case a.jobs <- job:
 			a.pending[key] = true
@@ -152,13 +160,12 @@ func (a *artworkCache) prune() {
 		return
 	}
 	sort.Slice(assets, func(i, j int) bool { return assets[i].at.Before(assets[j].at) })
-	for _, it := range assets {
-		if len(assets) <= artEntries && total <= artBudgetBytes {
-			break
-		}
-		if os.Remove(it.path) == nil {
-			total -= it.size
-			assets = assets[1:]
+	remaining:=len(assets)
+	for _,it:=range assets{
+		if remaining<=artEntries && total<=artBudgetBytes{break}
+		if os.Remove(it.path)==nil{
+			total-=it.size
+			remaining--
 		}
 	}
 }

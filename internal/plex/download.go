@@ -216,7 +216,7 @@ func (c *Client) DownloadTrack(ctx context.Context, it Item, dest string, progre
 	}
 	if expected > 0 && written != expected {
 		_ = f.Close()
-		return 0, fmt.Errorf("incomplete media %d/%d", written, expected)
+		return 0, fmt.Errorf("incomplete media %d/%d: %w", written, expected, io.ErrUnexpectedEOF)
 	}
 	if written <= 0 {
 		_ = f.Close()

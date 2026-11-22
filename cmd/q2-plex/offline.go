@@ -399,9 +399,25 @@ func (a *app) downloadCollection(ctx context.Context, kind, id string) {
 			return
 		}
 		dest := a.offline.MediaPath(file)
-		size, downloadErr := a.client.DownloadTrack(ctx, track, dest, func(bytes, total int64) {
-			a.updateDownload(func(j *downloadJob) { j.Bytes = bytes; j.Expected = total })
+		// Update the Q2 UI no more than 4 times/second, rather than locking
+		// after every 32 KiB network chunk. Small songs still report completion.
+		lastUpdate:=time.Time{}
+		lastBytes:=int64(0)
+		reportProgress:=func(bytes,total int64){
+			if bytes<total && total>0 && bytes-lastBytes<256<<10 &&
+				time.Since(lastUpdate)<250*time.Millisecond{return}
+			lastUpdate=time.Now()
+			lastBytes=bytes
+			a.updateDownload(func(j *downloadJob){j.Bytes=bytes;j.Expected=total})
+		}
+		size,downloadErr:=downloadWithRetry(ctx,func()(int64,error){
+			return a.client.DownloadTrack(ctx,track,dest,reportProgress)
+		},func(attempt int){
+			a.updateDownload(func(j *downloadJob){
+				j.Current=fmt.Sprintf("Reconnecting: %s (%d/2)",track.Title,attempt)
+			})
 		})
+		if downloadErr!=nil{a.notePlexFailure(downloadErr)}
 		if downloadErr != nil {
 			err = downloadErr
 			return

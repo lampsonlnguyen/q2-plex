@@ -25,6 +25,9 @@ type playbackSync struct {
 	previous      *playback.Now
 	previousTrack string
 	lastReport    time.Time
+	wake          chan struct{}
+	lastNowMod    time.Time
+	lastNowSize   int64
 }
 
 func newPlaybackSync(appDir string) (*playbackSync, error) {
@@ -32,7 +35,7 @@ func newPlaybackSync(appDir string) (*playbackSync, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &playbackSync{store: store, root: appDir}, nil
+	return &playbackSync{store: store, root: appDir, wake: make(chan struct{}, 1)}, nil
 }
 func (a *app) loadSavedQueue() {
 	if a.syncer == nil {
@@ -72,7 +75,10 @@ func (a *app) rememberQueue(items []plex.Item, index int, local map[string]strin
 		tr.Local = local[it.RatingKey]
 		saved.Tracks = append(saved.Tracks, tr)
 	}
-	return a.syncer.store.Replace(saved)
+	if err:=a.syncer.store.Replace(saved);err!=nil{return err}
+	// Wake the idle sync loop as soon as a new Q2 playback queue starts.
+	select{case a.syncer.wake<-struct{}{}:default:}
+	return nil
 }
 func (a *app) lastQueuePage() q2spot.Reply {
 	if a.syncer == nil {
@@ -156,63 +162,92 @@ func (a *app) handleSync(req q2spot.Request) (q2spot.Reply, bool) {
 	}
 	return q2spot.Reply{}, false
 }
+// A silent player needs no three-second polling. Q2 writes status only when
+// playback changes, and regular progress updates are already five seconds apart.
+const activeStatusPoll = 5 * time.Second
+const idleStatusPoll = 30 * time.Second
+const reportInterval = 30 * time.Second
+const positionWriteInterval = 30 * int64(time.Second/time.Second)
+func nextPlaybackPoll(previous *playback.Now) time.Duration {
+	if previous!=nil && (previous.State=="playing"||previous.State=="paused"){return activeStatusPoll}
+	return idleStatusPoll
+}
+func shouldSavePosition(old playback.Queue,prev *playback.Now,now playback.Now)bool{
+	if prev==nil || prev.Seq!=now.Seq || prev.Index!=now.Index || prev.State!=now.State{return true}
+	if now.Seconds<old.Seconds{return true}
+	return now.Seconds-old.Seconds>=positionWriteInterval
+}
 func (a *app) watchPlayback(ctx context.Context) {
-	ticker := time.NewTicker(3 * time.Second)
-	defer ticker.Stop()
 	for {
 		a.syncOnce(ctx)
+		interval:=nextPlaybackPoll(a.syncer.previous)
+		timer:=time.NewTimer(interval)
 		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
+		case <-ctx.Done(): timer.Stop();return
+		case <-a.syncer.wake: timer.Stop()
+		case <-timer.C:
 		}
 	}
 }
-func (a *app) syncOnce(ctx context.Context) {
-	if a.syncer == nil {
-		return
+// Keep an SD bookmark on shutdown, but never start network activity while Q2
+// is exiting. The firmware remains responsible for device power management.
+func (a *app) savePlaybackOnExit(){
+	if a.syncer==nil{return}
+	data,err:=os.ReadFile(statusPath)
+	if err!=nil{return}
+	now,err:=playback.ParseNow(data)
+	if err!=nil{return}
+	s:=a.syncer.store.Snapshot()
+	if now.Seq!=s.Seq || now.Index>=len(s.Tracks){return}
+	if err:=a.syncer.store.Update(now.Seq,now.Index,now.Seconds);err!=nil{
+		log.Printf("save final playback bookmark: %v",err)
 	}
-	data, err := os.ReadFile(statusPath)
-	if err == nil {
-		now, parseErr := playback.ParseNow(data)
-		if parseErr == nil {
-			a.observeNow(ctx, now)
+}
+func (a *app) syncOnce(ctx context.Context){
+	if a.syncer==nil{return}
+	if stat,err:=os.Stat(statusPath);err==nil{
+		// In steady state avoid decoding an unchanged status line. The firmware
+		// updates the file atomically when there is a new event.
+		if !stat.ModTime().Equal(a.syncer.lastNowMod)||stat.Size()!=a.syncer.lastNowSize{
+			data,err:=os.ReadFile(statusPath)
+			if err==nil{
+				now,parseErr:=playback.ParseNow(data)
+				if parseErr==nil{
+					a.syncer.lastNowMod=stat.ModTime()
+					a.syncer.lastNowSize=stat.Size()
+					a.observeNow(ctx,now)
+				}
+			}
 		}
 	}
 	a.flushFavorites(ctx)
 }
 func (a *app) observeNow(ctx context.Context, now playback.Now) {
-	s := a.syncer.store.Snapshot()
-	if len(s.Tracks) == 0 || now.Seq != s.Seq || now.Index >= len(s.Tracks) {
-		return
-	}
-	prev := a.syncer.previous
-	// Persist only meaningful changes. The firmware writes position at most every
-	// five seconds; this does not poll the SD card or write audio caches.
-	if prev == nil || prev.Seq != now.Seq || prev.Index != now.Index || prev.State != now.State ||
-		now.Seconds >= s.Seconds+5 || now.Seconds < s.Seconds {
-		if err := a.syncer.store.Update(now.Seq, now.Index, now.Seconds); err != nil {
-			log.Printf("save playback position: %v", err)
+	s:=a.syncer.store.Snapshot()
+	if len(s.Tracks)==0||now.Seq!=s.Seq||now.Index>=len(s.Tracks){return}
+	prev:=a.syncer.previous
+	switched:=prev==nil||prev.Seq!=now.Seq||prev.Index!=now.Index
+	stateChanged:=prev!=nil&&prev.State!=now.State
+	if shouldSavePosition(s,prev,now){
+		if err:=a.syncer.store.Update(now.Seq,now.Index,now.Seconds);err!=nil{
+			log.Printf("save playback position: %v",err)
 		}
 	}
-	// The first playing status or a track/state transition is sent immediately.
-	switched := prev == nil || prev.Seq != now.Seq || prev.Index != now.Index
-	stateChanged := prev != nil && prev.State != now.State
-	shouldReport := switched || stateChanged ||
-		time.Since(a.syncer.lastReport) >= 10*time.Second
-	if !shouldReport {
-		return
+	// A paused or stopped transition is immediate; steady listening reports
+	// at most once per 30s, avoiding unnecessary Wi-Fi wakeups.
+	shouldReport:=switched||stateChanged||time.Since(a.syncer.lastReport)>=reportInterval
+	if shouldReport{
+		if prev!=nil&&(prev.Seq!=now.Seq||prev.Index!=now.Index)&&
+			prev.State!="stopped"&&prev.Seq==now.Seq&&a.syncer.previousTrack!=""{
+			a.reportTrack(ctx,a.syncer.previousTrack,"stopped",prev.Seconds,prev.Length,true,s.Server)
+		}
+		track:=s.Tracks[now.Index]
+		if a.reportTrack(ctx,track.ID,now.State,now.Seconds,chooseLength(now.Length,track.Duration/1000),false,s.Server){
+			a.syncer.lastReport=time.Now()
+		}
+		a.syncer.previousTrack=track.ID
 	}
-	if prev != nil && (prev.Seq != now.Seq || prev.Index != now.Index) &&
-		prev.State != "stopped" && a.syncer.previousTrack != "" {
-		a.reportTrack(ctx, a.syncer.previousTrack, "stopped", prev.Seconds, prev.Length, true, s.Server)
-	}
-	track := s.Tracks[now.Index]
-	if a.reportTrack(ctx, track.ID, now.State, now.Seconds, chooseLength(now.Length, track.Duration/1000), false, s.Server) {
-		a.syncer.lastReport = time.Now()
-	}
-	a.syncer.previous = &now
-	a.syncer.previousTrack = track.ID
+	a.syncer.previous=&now
 }
 func chooseLength(actual, meta int64) int64 {
 	if actual > 0 {
@@ -236,6 +271,7 @@ func (a *app) reportTrack(ctx context.Context, id, state string, sec, length int
 	reqCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	if err := a.client.ReportTimeline(reqCtx, id, state, sec, length, continuing); err != nil {
+		a.notePlexFailure(err)
 		log.Printf("Plex playback timeline failed for track %s: %v", id, err)
 		return false
 	}
@@ -318,6 +354,7 @@ func (a *app) flushFavorites(ctx context.Context) {
 		err := a.client.SetFavorite(c, id, fav)
 		cancel()
 		if err != nil {
+			a.notePlexFailure(err)
 			// Keep the remaining events for retry after the Plex server reconnects.
 			remaining := strings.Join(entries[i:], "\n") + "\n"
 			if writeErr := atomic(taking, []byte(remaining)); writeErr != nil {

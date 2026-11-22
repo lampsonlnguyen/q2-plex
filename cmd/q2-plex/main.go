@@ -24,7 +24,7 @@ import (
 	"github.com/lampsonlnguyen/q2-plex/internal/q2spot"
 )
 
-const version = "0.5.0"
+const version = "0.6.0"
 const relayAddr = "127.0.0.1:2328"
 
 type app struct {
@@ -40,6 +40,7 @@ type app struct {
 	download      downloadJob
 	ctx           context.Context
 	syncer        *playbackSync
+	connection    connectionStatus
 }
 
 func main() {
@@ -74,6 +75,7 @@ func main() {
 		go a.watchPlayback(ctx)
 	}
 	go a.initialize(ctx)
+	go a.reconnectWorker(ctx)
 	server := &http.Server{Addr: relayAddr, Handler: http.HandlerFunc(a.relay), ReadHeaderTimeout: 5 * time.Second}
 	ln, err := net.Listen("tcp4", relayAddr)
 	if err != nil {
@@ -87,7 +89,14 @@ func main() {
 	defer server.Close()
 	socket := filepath.Join(*tmp, "q2-plex.browse.sock")
 	log.Printf("q2-plex %s serving %s", version, socket)
-	go func() { <-ctx.Done(); _ = os.Remove(socket); _ = server.Close(); os.Exit(0) }()
+	go func() {
+		<-ctx.Done()
+		// Do not terminate before the final playback bookmark reaches the SD.
+		a.savePlaybackOnExit()
+		_ = os.Remove(socket)
+		_ = server.Close()
+		os.Exit(0)
+	}()
 	if err := q2spot.Serve(socket, a.handle); err != nil {
 		log.Fatal(err)
 	}
@@ -122,47 +131,55 @@ func (a *app) launchConnection(manual string) {
 	}
 	a.busy = true
 	a.lastError = ""
+	a.connection.started = true
 	a.mu.Unlock()
-	go a.connectNow(context.Background(), manual)
+	ctx:=a.ctx
+	if ctx==nil{ctx=context.Background()}
+	go a.connectNow(ctx,manual)
 }
 func (a *app) connect(ctx context.Context) {
 	a.launchConnection("")
 }
 func (a *app) connectNow(ctx context.Context, manual string) {
-	defer func() { a.mu.Lock(); a.busy = false; a.mu.Unlock() }()
-	var err error
-	defer func() {
+	var result error
+	defer func(){
 		a.mu.Lock()
-		if err != nil {
-			a.lastError = err.Error()
-			log.Printf("Plex connection: %v", err)
-		} else {
-			a.lastError = ""
+		a.busy=false
+		a.connection.record(time.Now(),result)
+		if result!=nil {
+			a.lastError=result.Error()
+			log.Printf("Plex connection: %v",result)
+		}else{
+			a.lastError=""
 		}
 		a.mu.Unlock()
 	}()
-	if time.Since(time.Unix(a.client.State.TokenTime, 0)) > 5*24*time.Hour {
-		refreshCtx, cancel := context.WithTimeout(ctx, 12*time.Second)
-		err = a.client.Refresh(refreshCtx)
-		cancel()
-		if err != nil {
-			err = fmt.Errorf("Plex session refresh: %w", err)
+	// Prefer a verified, previously selected server. This saves a cloud request
+	// on every reboot and also works on LAN when plex.tv is unreachable.
+	if manual=="" {
+		probeCtx,stop:=context.WithTimeout(ctx,7*time.Second)
+		result=a.client.ProbeSavedServer(probeCtx)
+		stop()
+		if result==nil{return}
+	}
+	if time.Since(time.Unix(a.client.State.TokenTime,0))>5*24*time.Hour {
+		refreshCtx,stop:=context.WithTimeout(ctx,12*time.Second)
+		result=a.client.Refresh(refreshCtx)
+		stop()
+		if result!=nil {
+			result=fmt.Errorf("Plex session refresh: %w",result)
 			return
 		}
 	}
-	connectCtx, cancel := context.WithTimeout(ctx, 35*time.Second)
-	if manual != "" {
-		err = a.client.ConnectDirect(connectCtx, manual)
-	} else {
-		err = a.client.Discover(connectCtx)
+	connectCtx,stop:=context.WithTimeout(ctx,35*time.Second)
+	if manual!=""{
+		result=a.client.ConnectDirect(connectCtx,manual)
+	}else{
+		result=a.client.Discover(connectCtx)
 	}
-	cancel()
-	if err != nil {
-		return
-	}
-	// ConnectDirect/Discover already selects a music library, avoiding a second
-	// separate network call before showing Albums/Artists on the device.
-	log.Printf("Plex music connected: %s", a.client.State.ServerName)
+	stop()
+	if result!=nil{return}
+	log.Printf("Plex music connected: %s",a.client.State.ServerName)
 }
 func (a *app) beginLogin() {
 	a.mu.Lock()
@@ -223,53 +240,55 @@ func list(op, title, sub, id string) q2spot.Row {
 }
 func (a *app) root() q2spot.Reply {
 	a.mu.Lock()
-	pin, busy, msg := a.pin, a.busy, a.lastError
-	signed := a.client.State.Token != ""
-	server, lib := a.client.State.ServerName, a.client.State.LibraryID
+	pin,busy,msg:=a.pin,a.busy,a.lastError
+	signed:=a.client.State.Token!=""
+	server,lib:=a.client.State.ServerName,a.client.State.LibraryID
+	online:=a.connection.online
 	a.mu.Unlock()
-	if pin.Code != "" {
-		return q2spot.Reply{Message: "refresh", Rows: []q2spot.Row{
+	if pin.Code!=""{
+		return q2spot.Reply{Message:"refresh",Rows:[]q2spot.Row{
 			text("Visit plex.tv/link on your phone"),
-			text("Enter code: " + pin.Code),
-			text("Waiting for Plex authorization..."),
-			act("login", "Get a new code", ""),
+			text("Code: "+pin.Code),
+			text("Waiting for approval..."),
+			act("login","New Login Code",""),
 		}}
 	}
-	if !signed {
-		rows := []q2spot.Row{list("offline", "Offline Music", "Saved on SD card", ""), list("lastqueue", "Last Queue", "Restore saved playback", ""), act("login", "Sign In with Plex", "")}
-		if busy {
-			rows = append(rows, text("Getting login code..."))
+	if !signed{
+		rows:=[]q2spot.Row{
+			list("offline","Offline Music","Saved on microSD",""),
+			list("lastqueue","Last Queue","Previous music",""),
+			act("login","Sign In to Plex",""),
 		}
-		if msg != "" {
-			rows = append(rows, text("Error: "+msg))
-		}
-		return q2spot.Reply{Message: func() string {
-			if busy {
-				return "refresh"
-			}
-			return ""
-		}(), Rows: rows}
+		if busy{rows=append(rows,text("Connecting..."))}
+		if msg!=""{rows=append(rows,text("Error: "+msg))}
+		r:=q2spot.Reply{Rows:rows}
+		if busy{r.Message="refresh"}
+		return r
 	}
-	rows := []q2spot.Row{list("offline", "Offline Music", "Play without Wi-Fi", ""), list("lastqueue", "Last Queue", "Resume music", ""), list("downloadstatus", "Downloads", "Save music to microSD", "")}
-	if server != "" && lib != "" {
-		rows = append(rows, list("albums", "Albums", server, ""), list("artists", "Artists", server, ""), list("playlists", "Playlists", "Audio only", ""), list("favorites", "Favorites", "Five-star songs", ""), list("searchpage", "Search Music", "", ""), list("libraries", "Music Libraries", "Choose library", ""), list("queue", "Play Queue", "Current album", ""))
-	} else if !busy {
-		rows = append(rows, act("reconnect", "Connect to Plex", ""))
+	// Streaming stays the default: browse live music first, downloads last.
+	rows:=[]q2spot.Row{}
+	if server!=""&&lib!=""{
+		rows=append(rows,
+			list("albums","Albums","",""),
+			list("artists","Artists","",""),
+			list("playlists","Playlists","",""),
+			list("searchpage","Search Music","",""),
+			list("favorites","Favorites","",""),
+			list("queue","Up Next","",""),
+		)
 	}
-	if server == "" || lib == "" {
-		rows = append(rows, list("manual", "Manual Server", "Connect by IP address", ""))
+	rows=append(rows,
+		list("offline","Offline Music","On microSD",""),
+		list("downloadstatus","Downloads","",""),
+		list("lastqueue","Last Queue","Restore music",""),
+		list("connection","Connection",connectionLabel(server,online,busy),""),
+	)
+	if busy{rows=append(rows,text("Connecting to Plex..."))}
+	if !online&&!busy&&msg!=""{
+		rows=append(rows,text("Plex unavailable; retry is automatic"))
 	}
-	if busy {
-		rows = append(rows, text("Connecting to Plex..."))
-	}
-	if msg != "" {
-		rows = append(rows, text("Error: "+msg))
-	}
-	rows = append(rows, act("logout", "Sign Out", ""))
-	r := q2spot.Reply{Rows: rows}
-	if busy {
-		r.Message = "refresh"
-	}
+	r:=q2spot.Reply{Rows:rows}
+	if busy{r.Message="refresh"}
 	return r
 }
 func (a *app) handle(req q2spot.Request) q2spot.Reply {
@@ -283,6 +302,8 @@ func (a *app) handle(req q2spot.Request) q2spot.Reply {
 	case "reconnect":
 		a.launchConnection("")
 		return a.root()
+	case "connection":
+		return a.connectionPage()
 	case "manual":
 		a.mu.Lock()
 		address := a.manualAddress
@@ -357,7 +378,8 @@ func (a *app) handle(req q2spot.Request) q2spot.Reply {
 	case "libraries":
 		libs, err := a.client.Libraries(ctx)
 		if err != nil {
-			return q2spot.Fail("error", "Could not load libraries")
+			a.notePlexFailure(err)
+			return q2spot.Fail("error","Could not load libraries")
 		}
 		var rows []q2spot.Row
 		for _, lib := range libs {
@@ -397,8 +419,9 @@ func (a *app) handle(req q2spot.Request) q2spot.Reply {
 			return q2spot.Fail("bad", "Invalid page")
 		}
 		items, more, err := a.client.Items(ctx, req.Op, id, off)
-		if err != nil {
-			return q2spot.Fail("error", "Could not browse music")
+		if err!=nil{
+			a.notePlexFailure(err)
+			return q2spot.Fail("error","Could not browse music")
 		}
 
 		r := q2spot.Reply{}
@@ -452,8 +475,9 @@ func (a *app) handle(req q2spot.Request) q2spot.Reply {
 			return a.playAlbum(ctx, album, song)
 		}
 		it, err := a.client.Track(ctx, req.Args[0])
-		if err != nil {
-			return q2spot.Fail("error", "Track unavailable")
+		if err!=nil{
+			a.notePlexFailure(err)
+			return q2spot.Fail("error","Track unavailable")
 		}
 		if err = a.startQueue([]plex.Item{it}, 0); err != nil {
 			return q2spot.Fail("error", "Could not start music")
@@ -494,6 +518,7 @@ func (a *app) relay(w http.ResponseWriter, r *http.Request) {
 	if kind == "song" {
 		// Direct streaming remains in Q2 Pod's native player and honors HTTP Range.
 		if err := a.client.Stream(r.Context(), id, w, r); err != nil {
+			a.notePlexFailure(err)
 			log.Printf("stream %s: %v", id, err)
 		}
 		return
@@ -513,6 +538,7 @@ func (a *app) relay(w http.ResponseWriter, r *http.Request) {
 	}
 	data, err := a.client.Thumbnail(ctx, src, 256)
 	if err != nil {
+		a.notePlexFailure(err)
 		log.Printf("cover %s: %v", id, err)
 		http.Error(w, "cover unavailable", 502)
 		return

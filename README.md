@@ -1,6 +1,6 @@
 # q2-plex
 
-**Experimental v0.5.0** — music-only Plex client for the Shanling Q2 with Q2 Pod firmware.
+**Experimental v0.6.0** — music-only Plex client for the Shanling Q2 with Q2 Pod firmware.
 
 This is a beta requiring testing on the physical Q2, particularly interrupted downloads and local file playback. Inspired by Q2 Pod's generic card app API, A4Link/q2-jellyfin (MIT), and the Plex authentication and library APIs. No video playback or video decoding.
 
@@ -12,8 +12,8 @@ This is a beta requiring testing on the physical Q2, particularly interrupted do
 - A 48 MiB Go heap target; server paging is 25 rows per API request. No audio decoding inside this app.
 
 ### Known limitations
-- No physical Q2 hardware testing yet. This beta may require changes to device login and server discovery.
-- No playback reporting yet. Search, playlists, five-star Favorites and cover art are experimental and require device testing.
+- Plex login and music browsing have been confirmed on a physical Q2. The v0.6 optimizations still require hardware validation.
+- Playback timeline reporting requires compatible Q2 Pod firmware. Search, playlists, five-star Favorites and artwork need physical-device regression testing.
 - Server connections prefer local endpoints; connections selected from Plex discovery allow plain HTTP **only** to private/loopback IP addresses.
 - Credential file `.plex/auth.json` includes a Plex access token and signing key. **Anyone with read access to the card can extract them.** Don't share this file. Future work will add encryption/device-bound storage.
 - The Q2's system clock needs to be reasonably accurate for TLS validation and signed JWTs. The build includes a CA certificate bundle; it does not bypass TLS verification.
@@ -27,7 +27,7 @@ Requires Go 1.22+, Python 3, curl, and an internet connection for the CA bundle.
 ./contrib/shanlingq2/build.sh
 ```
 
-Unzip `dist/q2-plex-v0.5.0.zip` into the **root** of the Q2's microSD card, preserving the hidden `.plex` folder. After replacing an existing version, restart the Q2 so the old executable is not still running. In Q2 Pod select **Streaming → Plex Music**. The app stays in Streaming, as in previous releases.
+Unzip `dist/q2-plex-v0.6.0.zip` into the **root** of the Q2's microSD card, preserving the hidden `.plex` folder. After replacing an existing version, restart the Q2 so the old executable is not still running. In Q2 Pod select **Streaming → Plex Music**. The app stays in Streaming, as in previous releases.
 
 1. Select **Sign In with Plex**.
 2. On your phone open https://plex.tv/link and enter the code shown on the Q2.
@@ -97,3 +97,15 @@ MIT. Source written for this project. Protocol details follow Q2 Pod's public do
 - Older firmware without the new `now` or `fav` capabilities continues to play music and download albums, but cannot automatically report live progress or heart changes.
 - Offline history backfill and automatic ratings reconciliation from other Plex clients are not included in this beta. A Plex connection is required to report listening history; downloaded music still plays locally.
 - Preserve `.plex/auth.json`, `.plex/last-queue.json`, `.plex/fav.log`, and `PlexMusic/` while upgrading.
+
+## v0.6.0 Stability, efficiency, and Wi-Fi recovery
+
+- **Still under Streaming → Plex Music.** Existing audio streaming, native FLAC/MP3 decoding, downloaded music, account login, and `PlexMusic/` storage remain unchanged.
+- **Lower idle overhead:** playback status is checked every **5 seconds** while playing or paused, every **30 seconds** when stopped/idle, and a new queue wakes the status monitor immediately. Unchanged Q2 status files are not re-parsed.
+- **Fewer SD writes:** the last playback bookmark is saved on track/state changes, backwards seeks, or after **30 seconds** of progress instead of approximately every five seconds. The final bookmark is saved during normal Q2 app shutdown. Plex timeline reports are bounded to roughly every **30 seconds** during uninterrupted playback, plus immediate state transitions.
+- **Album art:** one background cover worker instead of two, at most 16 pending artwork requests, bounded temporary cache and failed-request records. Caching remains RAM/temp backed and 64-pixel for list covers.
+- **Wi-Fi recovery:** idempotent Plex metadata GETs retry once after transient network/HTTP 429/5xx failures. Interrupted original-quality downloads retry at most twice using safe `.part` file resume. Plex authentication, ratings, and playback-event writes are **not** automatically replayed.
+- **Connection recovery:** startup tries the previously authorized Plex server before discovering through the cloud. If a connection fails, automatic reconnect backs off **30, 60, 120, 240, then 300 seconds maximum**, with a manual **Connection → Reconnect Now** command. There is no continuous server scanning while connected.
+- **UI:** streaming libraries appear first, followed by Offline Music, Downloads, Last Queue, and a compact Connection menu with status/manual server/sign-out. Firmware controls font size; v0.6 does not patch the native theme.
+- **Bounded work:** downloading still uses a 32 KiB transfer buffer and now throttles on-screen progress notifications to reduce per-chunk overhead. Existing 48 MiB heap goal and music-only scope stay intact.
+- **Device testing required:** actual RAM/RSS, CPU time, standby power, Wi-Fi dropouts during streaming, and battery life have **not** been benchmarked on physical Q2 hardware. A live audio stream already in progress cannot be transparently resumed after a broken TCP response; Q2 native player retry/skip behavior must be observed. This milestone improves recovery, not a guarantee of gapless playback across Wi-Fi loss.
