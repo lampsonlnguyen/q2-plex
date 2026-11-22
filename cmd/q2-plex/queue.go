@@ -106,7 +106,7 @@ func (a *app) startQueueWithLocal(tracks []plex.Item, start int, local map[strin
 		fmt.Fprintf(os.Stderr,"q2-plex: save last queue: %v\n",err)
 	}
 	a.mu.Lock()
-	copies := map[string]string{
+	copies := map[string]string{}
 	for key, path := range local {
 		copies[key] = path
 	}
