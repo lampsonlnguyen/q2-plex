@@ -25,7 +25,7 @@ import (
 	"github.com/lampsonlnguyen/q2-plex/internal/q2spot"
 )
 
-const version = "0.6.0"
+const version = "0.9.0"
 const relayAddr = "127.0.0.1:2328"
 
 type app struct {
@@ -42,6 +42,8 @@ type app struct {
 	ctx           context.Context
 	syncer        *playbackSync
 	connection    connectionStatus
+	diag          *diagnostics
+	diagDir       string
 }
 
 func main() {
@@ -67,7 +69,7 @@ func main() {
 	if syncErr != nil {
 		log.Printf("saved queue unavailable: %v", syncErr)
 	}
-	a := &app{client: cl, art: art, offline: stored, syncer: pSync}
+	a := &app{client: cl, art: art, offline: stored, syncer: pSync, diag: &diagnostics{}, diagDir: *dir}
 	a.loadSavedQueue()
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	a.ctx = ctx
@@ -373,6 +375,9 @@ func (a *app) handle(req q2spot.Request) q2spot.Reply {
 			return q2spot.Fail("error", "Could not save sign-out")
 		}
 		return a.root()
+	}
+	if reply, handled := a.handleDiagnostics(req); handled {
+		return reply
 	}
 	if reply, handled := a.handleSync(req); handled {
 		return reply
