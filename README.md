@@ -2,9 +2,9 @@
 
 **Unofficial Plex client** — music-only third-party card app for Shanling Q2 with Q2 Pod firmware. Not developed, sponsored, or endorsed by Plex, Inc. The app is named **Plex Music** and uses Q2 Pod's native player; it is not the official Plexamp application.
 
-**Current development version: v0.9.0 beta.** Real-device playback and battery validation are still required before a stable v1.0 release.
+**Current release: v1.0.0.** This is the first versioned public release, not a claim that every feature has been validated on physical Q2 hardware. See [v1.0.0 release notes](docs/RELEASE-v1.0.0.md) for supported features and limitations.
 
-This is a beta requiring testing on the physical Q2, particularly interrupted downloads and local file playback. Inspired by Q2 Pod's generic card app API, A4Link/q2-jellyfin (MIT), and the Plex authentication and library APIs. No video playback or video decoding.
+Hardware testing is still needed, particularly for uninterrupted full-length playback, Wi-Fi recovery, offline downloads and battery performance. Inspired by Q2 Pod's generic card app API, A4Link/q2-jellyfin (MIT), and the Plex authentication and library APIs. No video playback or video decoding.
 
 ## App identity and icon
 
@@ -36,7 +36,7 @@ Requires Go 1.22+, Python 3, curl, and an internet connection for the CA bundle.
 ./contrib/shanlingq2/build.sh
 ```
 
-Unzip `dist/q2-plex-v0.9.0.zip` into the **root** of the Q2's microSD card, preserving the hidden `.plex` folder. After replacing an existing version, restart the Q2 so the old executable is not still running. In Q2 Pod select **Streaming → Plex Music**. The app stays in Streaming, as in previous releases.
+Unzip `dist/q2-plex-v1.0.0.zip` into the **root** of the Q2's microSD card, preserving the hidden `.plex` folder. After replacing an existing version, restart the Q2 so the old executable is not still running. In Q2 Pod select **Streaming → Plex Music**. The app stays in Streaming, as in previous releases.
 
 1. Select **Sign In with Plex**.
 2. On your phone open https://plex.tv/link and enter the code shown on the Q2.
