@@ -91,6 +91,9 @@ func (a *app) offlinePage(args []string) q2spot.Reply {
 	}
 	collections := a.offline.List()
 	r := q2spot.Reply{Rows: []q2spot.Row{}}
+	if len(collections) > 0 && offset >= len(collections) {
+		return q2spot.Fail("bad", "Offline page out of range")
+	}
 	if len(collections) == 0 {
 		return q2spot.Reply{Rows: []q2spot.Row{
 			text("No music saved yet"), text("Connect to Plex and download an album or playlist"),
