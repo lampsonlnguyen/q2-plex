@@ -25,7 +25,7 @@ import (
 	"github.com/lampsonlnguyen/q2-plex/internal/q2spot"
 )
 
-const version = "0.9.0"
+const version = "1.0.0"
 const relayAddr = "127.0.0.1:2328"
 
 type app struct {
