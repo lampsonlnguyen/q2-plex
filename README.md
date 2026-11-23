@@ -2,14 +2,14 @@
 
 **Unofficial Plex client** — music-only third-party card app for Shanling Q2 with Q2 Pod firmware. Not developed, sponsored, or endorsed by Plex, Inc. Plex account login and music playback engine were developed referencing Plex’s API [documentation](https://developer.plex.tv/pms/). The app is named **Plex Music** and uses Q2 Pod's native player; it is not the official Plexamp application.
 
-**Current release: v1.0.0.** This is the first versioned public release, not a claim that every feature has been validated on physical Q2 hardware. See [v1.0.0 release notes](docs/RELEASE-v1.0.0.md) for supported features and limitations.
+**Current release: v1.0.1.** This is a visual-only patch adding a circular Plexamp-style icon. See [v1.0.1 release notes](docs/RELEASE-v1.0.1.md) for installation and unchanged hardware limitations.
 
 More hardware testing is still needed, particularly for uninterrupted full-length playback, Wi-Fi recovery, offline downloads and battery performance. Inspired by Q2 Pod's generic card app API, A4Link/q2-jellyfin (MIT), and the Plex authentication and library APIs. No video playback or video decoding.
 
 ## App identity and icon
 
 - Display name: **Plex Music**, under **Streaming**.
-- Uses community Plexamp artwork by [selfh.st/icons](https://selfh.st/icons/) ([Plexamp icon](https://dashboardicons.com/icons/external/plexamp), CC BY 4.0). The build converts that artwork to `icon.png` (52 × 52) and `icon-40.png` (40 × 40) for Q2 Pod.
+- Uses community Plexamp artwork by [selfh.st/icons](https://selfh.st/icons/) ([Plexamp icon](https://dashboardicons.com/icons/external/plexamp), CC BY 4.0). The build masks that artwork into **circular icons with transparent anti-aliased edges** at `icon.png` (52 × 52) and `icon-40.png` (40 × 40) for Q2 Pod.
 - Plex and Plexamp names and logos are trademarks of their respective owner, Plex, Inc. This is an **independent, unofficial Plex-compatible client**, not an official Plex or Plexamp release.
 - The icon source is downloaded during packaging, so producing a package requires network access. Redistribution should retain this attribution.
 
@@ -36,7 +36,7 @@ Requires Go 1.22+, Python 3, curl, and an internet connection for the CA bundle.
 ./contrib/shanlingq2/build.sh
 ```
 
-Unzip `dist/q2-plex-v1.0.0.zip` into the **root** of the Q2's microSD card, preserving the hidden `.plex` folder. After replacing an existing version, restart the Q2 so the old executable is not still running. In Q2 Pod select **Streaming → Plex Music**. The app stays in Streaming, as in previous releases.
+Unzip `dist/q2-plex-v1.0.1.zip` into the **root** of the Q2's microSD card, preserving the hidden `.plex` folder. After replacing an existing version, restart the Q2 so the old executable is not still running. In Q2 Pod select **Streaming → Plex Music**. The app stays in Streaming, as in previous releases.
 
 1. Select **Sign In with Plex**.
 2. On your phone open https://plex.tv/link and enter the code shown on the Q2.
