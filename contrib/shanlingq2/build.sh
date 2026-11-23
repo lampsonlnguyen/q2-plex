@@ -22,4 +22,4 @@ fi
 # Match Q2 Pod's required 52 px and 40 px icon sizes.
 curl -fsSL --max-time 30 https://cdn.jsdelivr.net/gh/selfhst/icons/png/plexamp.png -o "$OUT/plexamp-source.png"
 python3 contrib/shanlingq2/make_icons.py "$OUT/plexamp-source.png" "$STAGE"
-python3 contrib/shanlingq2/package.py "$STAGE" "$OUT/q2-plex-v1.0.0.zip"
+python3 contrib/shanlingq2/package.py "$STAGE" "$OUT/q2-plex-v1.0.1.zip"
