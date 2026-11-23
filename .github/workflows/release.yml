@@ -1,4 +1,4 @@
-name: Publish Plex Music v1.0.0
+name: Publish Plex Music v1.0.1
 
 on:
   workflow_run:
@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: publish-q2-plex-v1.0.0
+  group: publish-q2-plex-v1.0.1
   cancel-in-progress: false
 
 jobs:
@@ -26,18 +26,18 @@ jobs:
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
           persist-credentials: false
-      - name: Check that this exact commit is main and version 1.0.0
+      - name: Check that this exact commit is main and version 1.0.1
         run: |
           git fetch origin main --depth=1
           test "$(git rev-parse HEAD)" = "$(git rev-parse FETCH_HEAD)"
-          grep -F 'const version = "1.0.0"' cmd/q2-plex/main.go
-          grep -F 'q2-plex-v1.0.0.zip' contrib/shanlingq2/build.sh
+          grep -F 'const version = "1.0.1"' cmd/q2-plex/main.go
+          grep -F 'q2-plex-v1.0.1.zip' contrib/shanlingq2/build.sh
       - name: Check for existing release
         id: existing
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view v1.0.0 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+          if gh release view v1.0.1 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
@@ -54,20 +54,20 @@ jobs:
         run: ./contrib/shanlingq2/build.sh
       - name: Validate package and icons
         if: steps.existing.outputs.exists == 'false'
-        run: python3 contrib/shanlingq2/verify_release.py dist/q2-plex-v1.0.0.zip
+        run: python3 contrib/shanlingq2/verify_release.py dist/q2-plex-v1.0.1.zip
       - name: Produce SHA256 checksums
         if: steps.existing.outputs.exists == 'false'
-        run: cd dist && sha256sum q2-plex-v1.0.0.zip > SHA256SUMS
+        run: cd dist && sha256sum q2-plex-v1.0.1.zip > SHA256SUMS
       - name: Publish release and Git tag
         if: steps.existing.outputs.exists == 'false'
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
-          gh release create v1.0.0 \
-            dist/q2-plex-v1.0.0.zip dist/SHA256SUMS \
+          gh release create v1.0.1 \
+            dist/q2-plex-v1.0.1.zip dist/SHA256SUMS \
             --repo "$GITHUB_REPOSITORY" \
             --target "$RELEASE_SHA" \
-            --title "Plex Music v1.0.0 for Q2 Pod" \
-            --notes-file docs/RELEASE-v1.0.0.md \
+            --title "Plex Music v1.0.1 for Q2 Pod" \
+            --notes-file docs/RELEASE-v1.0.1.md \
             --latest
