@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Resize the selfh.st Plexamp PNG using only Python's standard library.
+"""Create round Plexamp app icons using only Python's standard library.
 
 Q2 Pod expects 52px icon.png and 40px icon-40.png. Input must be
 non-interlaced 8-bit RGB or RGBA PNG; unsupported formats fail explicitly.
@@ -76,19 +76,43 @@ def chunk(tag, payload):
     return struct.pack(">I", len(payload)) + content + struct.pack(">I", zlib.crc32(content) & 0xffffffff)
 
 def write_icon(width, height, channels, rows, size, output):
-    # Area sampling avoids aliasing at the Q2's small icon sizes.
+    """Downsample to a padded circular RGBA icon with anti-aliased edges.
+
+    Keep the source aspect ratio by cropping to its centered square. The PNG
+    canvas stays 52x52 / 40x40 as required by Q2 Pod; only the outer ring and
+    corners are transparent. Keep the source's alpha as well.
+    """
+    import math
+
+    side = min(width, height)
+    if side < size:
+        raise ValueError("Plexamp artwork is too small to resize cleanly")
+    left = (width - side) // 2
+    top = (height - side) // 2
+    radius = size * 0.46  # about two transparent pixels of padding per side
     out = bytearray()
     for y in range(size):
-        out.append(0)
-        y0, y1 = y * height // size, (y + 1) * height // size
+        out.append(0)  # PNG filter: None
+        y0 = top + y * side // size
+        y1 = top + (y + 1) * side // size
         for x in range(size):
-            x0, x1 = x * width // size, (x + 1) * width // size
+            x0 = left + x * side // size
+            x1 = left + (x + 1) * side // size
             count = (x1 - x0) * (y1 - y0)
-            for c in range(channels):
-                value = sum(rows[sy][sx * channels + c] for sy in range(y0, y1) for sx in range(x0, x1))
-                out.append((value + count // 2) // count)
+            pixel = [
+                (sum(rows[sy][sx * channels + c] for sy in range(y0, y1)
+                     for sx in range(x0, x1)) + count // 2) // count
+                for c in range(channels)
+            ]
+            if channels == 3:
+                pixel.append(255)
+            # 1-pixel antialias band around the circular edge.
+            distance = math.hypot(x + 0.5 - size / 2, y + 0.5 - size / 2)
+            coverage = max(0.0, min(1.0, radius + 0.5 - distance))
+            pixel[3] = round(pixel[3] * coverage)
+            out.extend(pixel)
     image = (SIGNATURE +
-             chunk(b"IHDR", struct.pack(">IIBBBBB", size, size, 8, 2 if channels == 3 else 6, 0, 0, 0)) +
+             chunk(b"IHDR", struct.pack(">IIBBBBB", size, size, 8, 6, 0, 0, 0)) +
              chunk(b"IDAT", zlib.compress(bytes(out), 9)) +
              chunk(b"IEND", b""))
     pathlib.Path(output).write_bytes(image)
