@@ -26,10 +26,12 @@ jobs:
           fi
       - name: Unit tests
         run: go test ./...
+      - name: Test circular icon generation
+        run: python3 -m unittest discover -s contrib/shanlingq2 -p 'test_*.py'
       - name: Package MIPS32 app
         run: ./contrib/shanlingq2/build.sh
       - name: Verify install archive and 52px/40px icons
-        run: python3 contrib/shanlingq2/verify_release.py dist/q2-plex-v1.0.0.zip
+        run: python3 contrib/shanlingq2/verify_release.py dist/q2-plex-v1.0.1.zip
       - uses: actions/upload-artifact@v4
         with:
           name: q2-plex-beta
