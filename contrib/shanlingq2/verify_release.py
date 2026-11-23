@@ -33,7 +33,7 @@ def check(path):
             w, h = struct.unpack_from(">II", content, 16)
             if (w, h) != (dim, dim):
                 raise ValueError(f"icon {name}: {w}x{h}, expected {dim}x{dim}")
-            if content[24:26] != b"\\x08\\x06":
+            if content[24] != 8 or content[25] != 6:
                 raise ValueError(f"{name}: expected 8-bit RGBA")
             # The icon exporter uses one or more non-interlaced, unfiltered
             # IDAT scanlines. Verify genuine transparent corners, not merely
