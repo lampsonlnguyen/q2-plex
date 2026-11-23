@@ -4,6 +4,7 @@ import pathlib
 import struct
 import sys
 import zipfile
+import zlib
 
 EXPECTED = {
     ".plex/q2app", ".plex/run", ".plex/cacert.pem", ".plex/q2-plex",
@@ -32,6 +33,34 @@ def check(path):
             w, h = struct.unpack_from(">II", content, 16)
             if (w, h) != (dim, dim):
                 raise ValueError(f"icon {name}: {w}x{h}, expected {dim}x{dim}")
+            if content[24:26] != b"\\x08\\x06":
+                raise ValueError(f"{name}: expected 8-bit RGBA")
+            # The icon exporter uses one or more non-interlaced, unfiltered
+            # IDAT scanlines. Verify genuine transparent corners, not merely
+            # a square bitmap with the same dimensions.
+            offset = 8
+            compressed = bytearray()
+            while offset < len(content):
+                length = struct.unpack_from(">I", content, offset)[0]
+                tag = content[offset + 4:offset + 8]
+                if tag == b"IDAT":
+                    compressed.extend(content[offset + 8:offset + 8 + length])
+                offset += length + 12
+                if tag == b"IEND":
+                    break
+            pixels = zlib.decompress(compressed)
+            stride = 1 + dim * 4
+            if len(pixels) != stride * dim:
+                raise ValueError(f"{name}: wrong decoded pixel count")
+            if any(pixels[y * stride] != 0 for y in range(dim)):
+                raise ValueError(f"{name}: expected unfiltered icon rows")
+            alpha = lambda x, y: pixels[y * stride + 1 + x * 4 + 3]
+            if any(alpha(x, y) != 0 for x, y in
+                   ((0, 0), (0, dim - 1), (dim - 1, 0),
+                    (dim - 1, dim - 1), (0, dim // 2))):
+                raise ValueError(f"{name}: corners and outer padding must be transparent")
+            if not any(alpha(x, y) for y in range(dim) for x in range(dim)):
+                raise ValueError(f"{name}: icon must contain visible artwork")
         binary = z.read(".plex/q2-plex")
         if binary[:7] != b"\x7fELF\x01\x01\x01":
             raise ValueError("not a 32-bit little endian ELF")
@@ -45,5 +74,5 @@ def check(path):
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
-        raise SystemExit("usage: verify_release.py dist/q2-plex-v1.0.0.zip")
+        raise SystemExit("usage: verify_release.py dist/q2-plex-v1.0.1.zip")
     check(pathlib.Path(sys.argv[1]))
