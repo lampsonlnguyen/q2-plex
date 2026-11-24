@@ -500,7 +500,15 @@ func (c *Client) Items(ctx context.Context, kind, id string, offset int) ([]Item
 	case "albums":
 		path = "/library/sections/" + url.PathEscape(c.State.LibraryID) + "/all?type=9"
 	case "artist":
-		path = "/library/metadata/" + url.PathEscape(id) + "/children"
+		if !ratingKey(id) || !ratingKey(c.State.LibraryID) {
+			return nil, false, errors.New("invalid artist or music library ID")
+		}
+		// The artist /children endpoint may expose only Plex's Album grouping,
+		// leaving EPs/singles (and sometimes entire artist catalogs) invisible.
+		// Query all album metadata in the selected music library with the
+		// artist's rating key instead. Q2 Pod still owns the browsing UI.
+		path = "/library/sections/" + url.PathEscape(c.State.LibraryID) +
+			"/all?type=9&artist.id=" + url.QueryEscape(id)
 	case "album":
 		path = "/library/metadata/" + url.PathEscape(id) + "/children"
 	case "playlist":
