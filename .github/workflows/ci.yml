@@ -4,8 +4,38 @@ permissions:
 on:
   push:
   pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "37 9 * * 1" # Mondays at 09:37 UTC, audit history regularly
 jobs:
+  secret-scan:
+    name: Scan source and Git history for credentials
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0 # Full history, not just the latest commit
+          persist-credentials: false
+      - name: Block tracked local credentials and device data
+        shell: bash
+        run: |
+          if git ls-files | grep -Eq '(^|/)(\.plex/|PlexMusic/|auth\.json$|\.env($|\.)|id_rsa$|[^/]+\.(key|p12|pfx)$)'; then
+            echo "::error::A local credential or device-data file is tracked; remove it from Git and rotate any exposed secrets."
+            exit 1
+          fi
+      - name: Gitleaks secret scanner
+        uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Avoid public PR comments, reports, and uploaded artifacts containing any findings.
+          GITLEAKS_ENABLE_COMMENTS: 'false'
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: 'false'
+          GITLEAKS_ENABLE_SUMMARY: 'false'
   test:
+    needs: secret-scan # Never publish a new build when secret scanning fails
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
