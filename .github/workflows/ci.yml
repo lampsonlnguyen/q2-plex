@@ -6,7 +6,7 @@ on:
   pull_request:
   workflow_dispatch:
   schedule:
-    - cron: "37 9 * * 1" # Mondays at 09:37 UTC, audit history regularly
+    - cron: "37 9 * * 1" # Mondays at 09:37 UTC
 jobs:
   secret-scan:
     name: Scan source and Git history for credentials
@@ -16,12 +16,12 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          fetch-depth: 0 # Full history, not just the latest commit
+          fetch-depth: 0 # Fetch all commits to scan full history
           persist-credentials: false
       - name: Block tracked local credentials and device data
         shell: bash
         run: |
-          if git ls-files | grep -vE '(^|/)\.env\.example
+          if git ls-files | grep -vE '(^|/)\.env\.example$' | grep -Eq '(^|/)(\.plex/|PlexMusic/|auth\.json$|\.env($|\.)|id_rsa$|id_ed25519$|[^/]+\.(key|p12|pfx)$)'; then
             echo "::error::A local credential or device-data file is tracked; remove it from Git and rotate any exposed secrets."
             exit 1
           fi
@@ -29,57 +29,12 @@ jobs:
         uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Avoid public PR comments, reports, and uploaded artifacts containing any findings.
+          # Avoid posting secret-containing findings to public PR comments or uploaded reports.
           GITLEAKS_ENABLE_COMMENTS: 'false'
           GITLEAKS_ENABLE_UPLOAD_ARTIFACT: 'false'
           GITLEAKS_ENABLE_SUMMARY: 'false'
   test:
-    needs: secret-scan # Never publish a new build when secret scanning fails
-    if: github.event_name != 'schedule'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-      - name: Format Go sources
-        run: gofmt -w $(find cmd internal -name '*.go')
-      - name: Commit formatted source to branch
-        if: github.event_name == 'push' && github.ref_name != 'main'
-        run: |
-          if ! git diff --quiet -- cmd internal; then
-            git config user.name 'github-actions[bot]'
-            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git add cmd internal
-            git commit -m 'Format Go sources'
-            git push
-          fi
-      - name: Unit tests
-        run: go test ./...
-      - name: Test circular icon generation
-        run: python3 -m unittest discover -s contrib/shanlingq2 -p 'test_*.py'
-      - name: Package MIPS32 app
-        run: ./contrib/shanlingq2/build.sh
-      - name: Verify install archive and 52px/40px icons
-        run: python3 contrib/shanlingq2/verify_release.py dist/q2-plex-v1.0.1.zip
-      - uses: actions/upload-artifact@v4
-        with:
-          name: q2-plex-beta
-          path: dist/q2-plex-*.zip
- | grep -Eq '(^|/)(\.plex/|PlexMusic/|auth\.json$|\.env($|\.)|id_rsa$|id_ed25519$|[^/]+\.(key|p12|pfx)$)'; then
-            echo "::error::A local credential or device-data file is tracked; remove it from Git and rotate any exposed secrets."
-            exit 1
-          fi
-      - name: Gitleaks secret scanner
-        uses: gitleaks/gitleaks-action@v3
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Avoid public PR comments, reports, and uploaded artifacts containing any findings.
-          GITLEAKS_ENABLE_COMMENTS: 'false'
-          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: 'false'
-          GITLEAKS_ENABLE_SUMMARY: 'false'
-  test:
-    needs: secret-scan # Never publish a new build when secret scanning fails
+    needs: secret-scan
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
