@@ -21,6 +21,14 @@ More hardware testing is still needed, particularly for uninterrupted full-lengt
 - Q2 Pod's native list/selection protocol and direct FLAC/MP3 streaming with bounded album queues through a loopback proxy.
 - A 48 MiB Go heap target; server paging is 25 rows per API request. No audio decoding inside this app.
 
+## Credential safety and automated secret scanning
+
+Plex access tokens and the device signing key are stored **only on the Q2 microSD card** in `.plex/auth.json`. Never commit, attach, publish, or paste this file. `.gitignore` excludes the runtime `.plex/` directory, `PlexMusic/` downloads, build artifacts, developer `.env` files, and private-key formats.
+
+GitHub Actions runs **Gitleaks v3** on every push and pull request, on manual request, and weekly on Mondays. It fetches the complete Git history, uses Gitleaks' default rules plus Plex-specific token detection, and blocks the app build if scanning fails. The workflow avoids posting suspected secrets to pull-request comments or uploading secret-containing reports.
+
+Automated scanning cannot guarantee that every secret is caught, and deleting a committed secret does not erase it from Git history. **If a real Plex token or private key is exposed, revoke or rotate it immediately**, even if you later remove the file from the repository.
+
 ### Known limitations
 - Plex login and music browsing have been confirmed on a physical Q2. The v0.6 optimizations still require hardware validation.
 - Playback timeline reporting requires compatible Q2 Pod firmware. Search, playlists, five-star Favorites and artwork need physical-device regression testing.
