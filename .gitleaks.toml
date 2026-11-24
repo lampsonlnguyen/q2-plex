@@ -1,0 +1,14 @@
+title = "Q2 Plex Music secret detection"
+
+[extend]
+useDefault = true
+
+# Gitleaks' standard detectors cover common private keys and API tokens.
+# Add a rule for Plex-specific token fields, which aren't necessarily covered
+# by generic provider detectors. Only match literal values (not Go variables).
+[[rules]]
+id = "plex-literal-access-token"
+description = "Literal Plex access token embedded in source, JSON, or a request header"
+regex = '''(?i)(?:["']?(?:X-Plex-Token|accessToken|serverToken|authToken|auth_token|plex[_-]?token)["']?\s*[:=]\s*["']?)([A-Za-z0-9_-]{16,})'''
+secretGroup = 1
+keywords = ["X-Plex-Token", "accessToken", "serverToken", "authToken", "auth_token", "plex_token"]
