@@ -1,0 +1,22 @@
+# Q2 Plex Music runtime files: generated on the user's microSD card.
+.plex/
+PlexMusic/
+
+# Build outputs and local logs.
+dist/
+*.log
+
+# Never check in login state, API tokens, private keys or developer .env files.
+auth.json
+.env
+.env.*
+!.env.example
+*.key
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+
+# OS/editor artifacts.
+.DS_Store
+Thumbs.db
