@@ -14,6 +14,10 @@ More hardware testing is still needed, particularly for uninterrupted full-lengt
 - Plex and Plexamp names and logos are trademarks of their respective owner, Plex, Inc. This is an **independent, unofficial Plex-compatible client**, not an official Plex or Plexamp release.
 - The icon source is downloaded during packaging, so producing a package requires network access. Redistribution should retain this attribution.
 
+## Artist release browsing
+
+**Artists → [Artist]** lists Plex albums, EPs and singles from the selected music library using the artist's Plex ID, rather than relying on the artist `/children` view, which can omit releases on some Plex servers. Artist pages use Q2 Pod's existing native card-app list UI, click-wheel and touch navigation, pagination and cover handling; no custom screen or audio player is added. If an album belongs to a different *album artist* in Plex metadata, Plex may still exclude it from this artist filter.
+
 ## Included in the first milestone
 - Plex account login using a 4-character PIN on **https://plex.tv/link** and Ed25519-signed device JWT.
 - Saving the device identity and access token on the microSD card; proactive token refresh after five days.
