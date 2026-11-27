@@ -28,6 +28,19 @@ class RoundIconTests(unittest.TestCase):
                                     for y in range(size) for x in range(size)),
                                 "round edge should be anti-aliased")
 
+    def test_pane(self):
+        with tempfile.TemporaryDirectory() as temp:
+            output = pathlib.Path(temp) / "pane.png"
+            make_icons.write_pane(output)
+            w, h, channels, rows = make_icons.read_png(output)
+            self.assertEqual((w, h, channels), (96, 96, 4))
+            pixels = [row[x:x + 4] for row in rows for x in range(0, len(row), 4)]
+            self.assertTrue(any(p[3] == 255 for p in pixels))
+            self.assertTrue(any(0 < p[3] < 255 for p in pixels))
+            self.assertTrue(all(p[:3] == b"\xff\xff\xff" for p in pixels if p[3]))
+            self.assertEqual(rows[0][3], 0)
+            self.assertEqual(rows[95][95 * 4 + 3], 0)
+
     def test_preserves_source_alpha(self):
         width, height = 96, 96
         rows = [bytearray([20, 30, 40, 93] * width) for _ in range(height)]

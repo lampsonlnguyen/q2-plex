@@ -117,12 +117,39 @@ def write_icon(width, height, channels, rows, size, output):
              chunk(b"IEND", b""))
     pathlib.Path(output).write_bytes(image)
 
+def write_pane(output):
+    """White Plex-style chevron on transparent background, 4x supersampled."""
+    size = 96
+    # Centered right-facing chevron, independent of the colored list artwork.
+    polygon = [(18, 3), (49, 3), (80, 48), (49, 93), (18, 93), (49, 48)]
+
+    def inside(x, y):
+        hit = False
+        for (ax, ay), (bx, by) in zip(polygon, polygon[1:] + polygon[:1]):
+            if (ay > y) != (by > y) and x < (bx - ax) * (y - ay) / (by - ay) + ax:
+                hit = not hit
+        return hit
+
+    out = bytearray()
+    for y in range(size):
+        out.append(0)
+        for x in range(size):
+            covered = sum(inside(x + (sx + 0.5) / 4, y + (sy + 0.5) / 4)
+                          for sy in range(4) for sx in range(4))
+            out.extend((255, 255, 255, round(255 * covered / 16)))
+    output.write_bytes(SIGNATURE +
+                       chunk(b"IHDR", struct.pack(">IIBBBBB", size, size, 8, 6, 0, 0, 0)) +
+                       chunk(b"IDAT", zlib.compress(bytes(out), 9)) +
+                       chunk(b"IEND", b""))
+
+
 def main():
     source, outdir = map(pathlib.Path, sys.argv[1:3])
     outdir.mkdir(parents=True, exist_ok=True)
     width, height, channels, rows = read_png(source)
     for size, filename in ((52, "icon.png"), (40, "icon-40.png")):
         write_icon(width, height, channels, rows, size, outdir / filename)
+    write_pane(outdir / "pane.png")
 
 if __name__ == "__main__":
     main()

@@ -8,7 +8,7 @@ import zlib
 
 EXPECTED = {
     ".plex/q2app", ".plex/run", ".plex/cacert.pem", ".plex/q2-plex",
-    ".plex/icon.png", ".plex/icon-40.png",
+    ".plex/icon.png", ".plex/icon-40.png", ".plex/pane.png",
 }
 PNG_SIG = b"\x89PNG\r\n\x1a\n"
 
@@ -26,7 +26,7 @@ def check(path):
         q2app = z.read(".plex/q2app").decode("utf-8")
         if "name=Plex Music\n" not in q2app or "row=streaming\n" not in q2app:
             raise ValueError("wrong Q2 app name or menu placement")
-        for name, dim in ((".plex/icon.png", 52), (".plex/icon-40.png", 40)):
+        for name, dim in ((".plex/icon.png", 52), (".plex/icon-40.png", 40), (".plex/pane.png", 96)):
             content = z.read(name)
             if not content.startswith(PNG_SIG) or content[12:16] != b"IHDR":
                 raise ValueError("invalid PNG " + name)
@@ -61,6 +61,12 @@ def check(path):
                 raise ValueError(f"{name}: corners and outer padding must be transparent")
             if not any(alpha(x, y) for y in range(dim) for x in range(dim)):
                 raise ValueError(f"{name}: icon must contain visible artwork")
+            if name.endswith("/pane.png"):
+                if any(pixels[y * stride + 1 + x * 4:y * stride + 4 + x * 4] != b"\xff\xff\xff"
+                       for y in range(dim) for x in range(dim) if alpha(x, y)):
+                    raise ValueError("pane artwork must be white")
+                if not any(0 < alpha(x, y) < 255 for y in range(dim) for x in range(dim)):
+                    raise ValueError("pane edges must be anti-aliased")
         binary = z.read(".plex/q2-plex")
         if binary[:7] != b"\x7fELF\x01\x01\x01":
             raise ValueError("not a 32-bit little endian ELF")
@@ -74,5 +80,5 @@ def check(path):
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
-        raise SystemExit("usage: verify_release.py dist/q2-plex-v1.0.1.zip")
+        raise SystemExit("usage: verify_release.py dist/q2-plex-v1.0.2.zip")
     check(pathlib.Path(sys.argv[1]))

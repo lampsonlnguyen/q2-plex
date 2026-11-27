@@ -18,7 +18,7 @@ def main():
     struct.pack_into("<I", data, 36, flags | 0x400) # EF_MIPS_NAN2008
     binary.write_bytes(data)
     with zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as z:
-        for name in ["q2app", "run", "cacert.pem", "q2-plex", "icon.png", "icon-40.png"]:
+        for name in ["q2app", "run", "cacert.pem", "q2-plex", "icon.png", "icon-40.png", "pane.png"]:
             info = zipfile.ZipInfo(".plex/" + name, (2026, 1, 1, 0, 0, 0))
             info.compress_type = zipfile.ZIP_DEFLATED
             info.external_attr = (0o100000 | (0o755 if name in ("run", "q2-plex") else 0o644)) << 16
