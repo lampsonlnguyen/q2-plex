@@ -27,7 +27,7 @@ More hardware testing is still needed, particularly for uninterrupted full-lengt
 
 ## Credential safety and automated secret scanning
 
-Plex access tokens and the device signing key are stored **only on the Q2 microSD card** in `.plex/auth.json`. Never commit, attach, publish, or paste this file. `.gitignore` excludes the runtime `.plex/` directory, `PlexMusic/` downloads, build artifacts, developer `.env` files, and private-key formats.
+Plex access tokens and the device signing key are stored **only on the Q2**: sealed by the [Vault](https://github.com/js-surya/q2-vault) card app when it's installed (encrypted on the card, its key in the Q2's internal storage), otherwise in `.plex/auth.json` on the microSD card. Never commit, attach, publish, or paste this file. `.gitignore` excludes the runtime `.plex/` directory, `PlexMusic/` downloads, build artifacts, developer `.env` files, and private-key formats.
 
 GitHub Actions runs **Gitleaks v3** on every push and pull request, on manual request, and weekly on Mondays. It fetches the complete Git history, uses Gitleaks' default rules plus Plex-specific token detection, and blocks the app build if scanning fails. The workflow avoids posting suspected secrets to pull-request comments or uploading secret-containing reports.
 
@@ -37,7 +37,7 @@ Automated scanning cannot guarantee that every secret is caught, and deleting a 
 - Plex login and music browsing have been confirmed on a physical Q2. The v0.6 optimizations still require hardware validation.
 - Playback timeline reporting requires compatible Q2 Pod firmware. Search, playlists, five-star Favorites and artwork need physical-device regression testing.
 - Server connections prefer local endpoints; connections selected from Plex discovery allow plain HTTP **only** to private/loopback IP addresses.
-- Credential file `.plex/auth.json` includes a Plex access token and signing key. **Anyone with read access to the card can extract them.** Don't share this file. Future work will add encryption/device-bound storage.
+- Without the [Vault](https://github.com/js-surya/q2-vault) card app, the credential file `.plex/auth.json` holds a Plex access token and signing key, and **anyone with read access to the card can extract them.** Don't share this file. With the Vault installed, the login is sealed there instead: the first start moves `auth.json` in, checks the Vault gives it back, then deletes the file. If the Vault is away when a sign-in is saved, it goes to `auth.json` and moves in at the next start.
 - The Q2's system clock needs to be reasonably accurate for TLS validation and signed JWTs. The build includes a CA certificate bundle; it does not bypass TLS verification.
 - On old Q2 Pod firmware without URL queue support, streaming will not work.
 

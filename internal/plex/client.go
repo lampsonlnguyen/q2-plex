@@ -100,19 +100,32 @@ type Client struct {
 	Home  string
 	Path  string
 	Cloud string
+	// Secrets, when set, keeps State in the Vault card app rather than auth.json (secrets.go).
+	Secrets Secrets
+	sealed  bool // State lives in the Vault
 }
 
-func Load(dir string) (*Client, error) {
+// Load reads the login from auth.json in dir.
+func Load(dir string) (*Client, error) { return LoadWith(dir, nil) }
+
+// LoadWith reads the login from s, the Vault, when it answers (moving an existing auth.json into it), else
+// from auth.json in dir as Load does.
+func LoadWith(dir string, s Secrets) (*Client, error) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, err
 	}
-	c := &Client{Home: dir, Path: filepath.Join(dir, "auth.json"), Cloud: CloudURL}
-	if b, err := os.ReadFile(c.Path); err == nil {
+	c := &Client{Home: dir, Path: filepath.Join(dir, "auth.json"), Cloud: CloudURL, Secrets: s}
+	b, fromFile, err := c.readState()
+	if err != nil {
+		return nil, err
+	}
+	if b != nil {
 		if err = json.Unmarshal(b, &c.State); err != nil {
 			return nil, err
 		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return nil, err
+		if fromFile && c.sealed {
+			c.moveIn(b)
+		}
 	}
 	if c.State.ClientID == "" || c.State.PrivateKey == "" {
 		pub, priv, err := ed25519.GenerateKey(rand.Reader)
@@ -153,11 +166,7 @@ func (c *Client) Save() error {
 	if err != nil {
 		return err
 	}
-	path := c.Path + ".tmp"
-	if err = os.WriteFile(path, b, 0600); err != nil {
-		return err
-	}
-	return os.Rename(path, c.Path)
+	return c.write(b)
 }
 func (c *Client) headers(req *http.Request, token string) {
 	req.Header.Set("Accept", "application/json")

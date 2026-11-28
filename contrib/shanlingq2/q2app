@@ -5,3 +5,4 @@ qr=0
 stop=0
 search=Search Plex Music
 more=queue Play Queue
+needs=vault

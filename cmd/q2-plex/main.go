@@ -52,7 +52,7 @@ func main() {
 	flag.Parse()
 	debug.SetMemoryLimit(48 << 20)
 	log.SetOutput(os.Stderr)
-	cl, err := plex.Load(*dir)
+	cl, err := plex.LoadWith(*dir, plex.Vault{}) // the login sealed in the Vault card app when it's installed
 	if err != nil {
 		log.Fatal(err)
 	}
